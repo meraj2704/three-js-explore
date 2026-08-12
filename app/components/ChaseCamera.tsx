@@ -34,6 +34,13 @@ type ChaseCameraProps = {
 /** Default camera seat: behind the car and above it. */
 const DEFAULT_CHASE_OFFSET: [number, number, number] = [0, 2.6, -6.5];
 
+/** Pinned against a wall the seat can't step back, so it steps up instead: some
+ *  of the travel the clamp took is repaid as height. Without this, a car facing
+ *  away from a nearby wall leaves the camera a metre behind it and the whole
+ *  frame is bonnet. Capped so it can't climb out through a ceiling. */
+const CLAMP_RISE_RATIO = 0.8;
+const MAX_CLAMP_RISE = 3;
+
 /**
  * Follows the car from behind.
  *
@@ -50,12 +57,31 @@ export function ChaseCamera({
   // Scratch vectors, allocated once. Creating them inside useFrame would mean
   // ~120 throwaway objects a second for the garbage collector.
   const desiredPosition = useMemo(() => new Vector3(), []);
+  const clampedSeat = useMemo(() => new Vector3(), []);
   const lookAtPoint = useMemo(() => new Vector3(), []);
   // Depends on the tuple's contents, not its identity, so an inline array
   // literal at the call site doesn't rebuild this every render.
   const offsetVector = useMemo(
     () => new Vector3(...offset),
     [offset[0], offset[1], offset[2]], // eslint-disable-line react-hooks/exhaustive-deps
+  );
+
+  // Vector3.clamp works per component, so an unfenced side is just an infinite
+  // one — which is also why y never needs a case of its own. Pass a stable
+  // `bounds` object and these are built once.
+  const boundsMin = useMemo(
+    () =>
+      new Vector3(
+        bounds?.minX ?? -Infinity,
+        -Infinity,
+        bounds?.minZ ?? -Infinity,
+      ),
+    [bounds],
+  );
+  const boundsMax = useMemo(
+    () =>
+      new Vector3(bounds?.maxX ?? Infinity, Infinity, bounds?.maxZ ?? Infinity),
+    [bounds],
   );
 
   useFrame((state, delta) => {
@@ -66,6 +92,18 @@ export function ChaseCamera({
     // camera stays behind the car no matter which way it is pointing.
     desiredPosition.copy(offsetVector);
     car.localToWorld(desiredPosition);
+
+    // Clamp the seat, not the camera's current position: the easing below still
+    // runs, so the camera glides along the wall rather than sticking to it.
+    if (bounds) {
+      clampedSeat.copy(desiredPosition).clamp(boundsMin, boundsMax);
+      const lost = desiredPosition.distanceTo(clampedSeat);
+      desiredPosition
+        .copy(clampedSeat)
+        .setY(
+          clampedSeat.y + Math.min(lost * CLAMP_RISE_RATIO, MAX_CLAMP_RISE),
+        );
+    }
 
     // Frame-rate independent easing. Using 1 - e^(-k·dt) rather than a plain
     // lerp alpha keeps the feel identical at 30fps and 144fps.

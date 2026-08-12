@@ -122,7 +122,11 @@ export function Museum({ target, lit = false, onOccupancyChange }: MuseumProps) 
           the sides are the plinth the building stands on. */}
       <mesh position={[0, -BASE_THICKNESS / 2, 0]} receiveShadow>
         <boxGeometry args={[HALF_DEPTH * 2, BASE_THICKNESS, HALF_WIDTH * 2]} />
-        <meshStandardMaterial color="#2e2b33" metalness={0.35} roughness={0.28} />
+        {/* Barely any metalness. A metallic surface has no diffuse response at
+            all — it shows you its reflections — and this scene has no
+            environment map for it to reflect, so anything above ~0.2 here turns
+            the hall floor into a black hole with a lit room above it. */}
+        <meshStandardMaterial color="#575263" metalness={0.08} roughness={0.38} />
       </mesh>
 
       {/* Forecourt, laid at road height so the car drives straight off the
@@ -325,11 +329,17 @@ export function Museum({ target, lit = false, onOccupancyChange }: MuseumProps) 
         />
       </mesh>
 
-      {/* Ceiling strips. Emissive only — they look like the source, but it's the
-          single pointLight below that actually lights the hall. */}
-      {[-3.6, 3.6].map((z) => (
-        <mesh key={z} position={[0, MUSEUM_HEIGHT - 0.12, z]}>
-          <boxGeometry args={[10, 0.16, 0.7]} />
+      {/* Backlit strips along the side walls, just above the exhibits. Emissive
+          only: they don't light anything, they just give the pointLight below a
+          visible source. They sit on the walls rather than the ceiling because
+          the chase camera aims a little below the car and never once looks up —
+          anything overhead is geometry nobody will ever see. */}
+      {[-1, 1].map((side) => (
+        <mesh
+          key={`strip${side}`}
+          position={[0, 3, side * (HALF_WIDTH - MUSEUM_WALL - 0.06)]}
+        >
+          <boxGeometry args={[INNER_X * 2 - 1.4, 0.28, 0.12]} />
           <meshStandardMaterial
             color="#fff7ed"
             emissive="#ffedd5"

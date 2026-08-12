@@ -9,6 +9,10 @@ import {
   BRANCH_LENGTH,
   BRANCH_WIDTH,
   BRANCH_Z,
+  FORECOURT_DEPTH,
+  FORECOURT_HALF_Z,
+  MUSEUM_CENTER_Z,
+  MUSEUM_FRONT_X,
   ROAD_LENGTH,
   ROAD_SURFACE_Y,
   ROAD_WIDTH,
@@ -59,10 +63,25 @@ const LAMP_PLACEMENTS: LampPlacement[] = [
       reach: onNear ? -1.2 : 1.2,
     };
   }),
+
+  // Forecourt: a pair flanking the drive up to the museum doors. The branch's
+  // own lamps stop a full 13 units short of the facade, which would otherwise
+  // leave the last stretch — the bit you have to aim down — in the dark. Adding
+  // them here rather than as their own lights means the nearest-four rule picks
+  // them up automatically and the scene's light budget doesn't move.
+  ...[-1, 1].map((side) => ({
+    position: [
+      MUSEUM_FRONT_X + FORECOURT_DEPTH / 2,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z + side * (FORECOURT_HALF_Z + 0.6),
+    ] as [number, number, number],
+    reach: side * 1.2,
+  })),
 ];
 
-/** Index of the first branch lamp, so we know which ones to yaw. */
-const FIRST_BRANCH_LAMP = Math.floor(ROAD_LENGTH / LAMP_SPACING);
+/** Index of the first lamp that stands beside an east-west surface. Everything
+ *  from here on — the branch and the forecourt — has to be yawed. */
+const FIRST_YAWED_LAMP = Math.floor(ROAD_LENGTH / LAMP_SPACING);
 
 /** How many lamps around the car actually get a pointLight.
  *
@@ -125,14 +144,14 @@ export function StreetLamps({ target }: { target: RefObject<Group | null> }) {
   return (
     <>
       {LAMP_PLACEMENTS.map(({ position, reach }, i) => {
-        // Branch lamps stand beside an east-west road, so yaw them a quarter
-        // turn to swing their arms out over that road instead of the main one.
-        const onBranch = i >= FIRST_BRANCH_LAMP;
+        // These stand beside an east-west surface, so yaw them a quarter turn to
+        // swing their arms along z instead of over the main road.
+        const yawed = i >= FIRST_YAWED_LAMP;
         return (
           <StreetLamp
             key={`${position[0]},${position[2]}`}
             position={position}
-            rotation={onBranch ? [0, Math.PI / 2, 0] : [0, 0, 0]}
+            rotation={yawed ? [0, Math.PI / 2, 0] : [0, 0, 0]}
             reach={reach}
             lit={litIndices.has(i)}
           />
