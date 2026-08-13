@@ -26,6 +26,7 @@ import {
   MUSEUM_PLINTH_DEPTH,
   MUSEUM_PLINTH_HEIGHT,
   MUSEUM_WALL,
+  MUSEUM_WING_PROJECTION,
   ROAD_SURFACE_Y,
 } from "./worldGeometry";
 
@@ -403,7 +404,10 @@ const GALLERY_EXHIBIT_CLEARANCE = 0.55;
  * lift them to props if you ever need to tune the look itself. */
 const BASE_THICKNESS = 0.9;
 const WALL_SINK = 0.1;
-const WING_PROJECTION = 2.6;
+/** The one proportion here that something outside the building also needs — the
+ *  roadside kerb runs up the forecourt and has to stop before it. Aliased rather
+ *  than spelled out twice, so there is still only one of it. */
+const WING_PROJECTION = MUSEUM_WING_PROJECTION;
 const COLUMN_SPACING = 2.3;
 const EAVES = 0.6;
 const EXHIBIT_SPACING = 4.2;

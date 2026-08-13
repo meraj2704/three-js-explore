@@ -12,7 +12,7 @@ import { Car } from "../components/Car";
 import { ChaseCamera } from "../components/ChaseCamera";
 import { Museum } from "../components/Museum";
 import type { MuseumPortrait } from "../components/Museum";
-import { mernExhibits } from "../components/mernExhibits";
+import { stackExhibits } from "../components/stackExhibits";
 import { Road } from "../components/Road";
 import { SceneFog } from "../components/SceneFog";
 import { StreetLamps } from "../components/StreetLamps";
@@ -137,12 +137,38 @@ const POSES: { position: [number, number, number]; rotation: [number, number, nu
     position: [MUSEUM_CENTER_X - 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
     rotation: [0, -Math.PI / 3, 0],
   },
-  // 13 — square to the FIRST pedestal on the +z plinth, which the side offset
-  //      makes the React mark. The atom is the finest shape in the set and the
-  //      one that decides how heavy the others have to be drawn.
+  // 13 — square to the FIRST pedestal on the +z plinth. The side offset makes it
+  //      the Node mark now that the set is seven; it used to be React, which is
+  //      still the finest shape in the set and still the one that decides how
+  //      heavy the others have to be drawn — see pose 17.
   {
     position: [MUSEUM_CENTER_X - 10.5, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
     rotation: [0, 0, 0],
+  },
+  // 14-16 — square to the second, third and fourth pedestals of that plinth,
+  //      which the offset makes Next, Nest and PostgreSQL. Pedestals are
+  //      EXHIBIT_SPACING apart, hence the 4.2 steps. These are the three marks
+  //      drawn from shapes rather than from primitives, so they are the ones to
+  //      look at after any change to how a mark is cut: the N has to stay inside
+  //      its disc, the ribbon has to read as a band and not a triangle, and the
+  //      elephant has to keep both of its waists.
+  {
+    position: [MUSEUM_CENTER_X - 6.3, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
+    rotation: [0, 0, 0],
+  },
+  {
+    position: [MUSEUM_CENTER_X - 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
+    rotation: [0, 0, 0],
+  },
+  {
+    position: [MUSEUM_CENTER_X + 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
+    rotation: [0, 0, 0],
+  },
+  // 17 — the React atom, which the offset has moved to the −z plinth's third
+  //      pedestal. Turned to face it across the hall.
+  {
+    position: [MUSEUM_CENTER_X - 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z - 12],
+    rotation: [0, Math.PI, 0],
   },
 ];
 
@@ -176,7 +202,7 @@ export default function Probe() {
         <Museum
           target={playerCar}
           portrait={PORTRAIT}
-          exhibits={mernExhibits}
+          exhibits={stackExhibits}
           lit={inMuseum}
           onOccupancyChange={setInMuseum}
         />

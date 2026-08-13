@@ -16,8 +16,9 @@ import type {
   MuseumPortrait,
   MuseumTheme,
 } from "./Museum";
-import { mernExhibits } from "./mernExhibits";
+import { stackExhibits } from "./stackExhibits";
 import { Road } from "./Road";
+import { Roadside } from "./Roadside";
 import { SceneFog } from "./SceneFog";
 import { StreetLamps } from "./StreetLamps";
 import {
@@ -234,6 +235,12 @@ export default function Scene() {
           shadow-bias={-0.0005}
         />
 
+        {/* The ground everything stands on, and the kerb around every edge of
+            the asphalt. Comes before the roads it edges for reading order only —
+            it takes no position or size, because every run of kerb is derived
+            from the same worldGeometry edges the roads and isOnPavement use. */}
+        <Roadside />
+
         {/* Lamp posts down both roads; only those near the car are lit. */}
         <StreetLamps target={playerCar} />
 
@@ -282,7 +289,7 @@ export default function Scene() {
           name="Mahfuz Islam MUSEUM"
           portrait={MAHFUZ_PORTRAIT}
           gallery={PROJECT_GALLERY}
-          exhibits={mernExhibits}
+          exhibits={stackExhibits}
           lit={inMuseum === "left"}
           onOccupancyChange={occupancy("left")}
         />

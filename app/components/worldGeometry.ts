@@ -140,6 +140,14 @@ export const MUSEUM_CENTER_Z = BRANCH_Z;
 export const MUSEUM_WALL = 0.7;
 export const MUSEUM_HEIGHT = 11;
 
+/** How far the entrance wings stand forward of the facade, into the forecourt.
+ *  A proportion of the building, so <Museum> owns how it is USED — but the
+ *  roadside kerb has to stop short of one, and a kerb buried in a wing ends up
+ *  with its inner face coplanar with the wing's, which is what z-fighting is
+ *  made of. So the number itself lives out here, like every other fact two
+ *  components have to agree on. */
+export const MUSEUM_WING_PROJECTION = 2.6;
+
 /** The doorway, centered on the facade. 3.2 leaves a 4.6-wide lane once the
  *  car's own width is taken off — aimable while still rolling. Anything
  *  tighter turns arriving at the museum into a parking exercise. */

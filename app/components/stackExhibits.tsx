@@ -1,10 +1,14 @@
 "use client";
 
 /**
- * The MERN stack, as things you can drive past.
+ * The stack, as things you can drive past.
  *
- * Four marks standing on the pedestals down the project walls — MongoDB,
- * Express, React, Node — in place of the abstract solids the museum ships with.
+ * Seven marks standing on the pedestals down the project walls — MongoDB,
+ * Express, React, Node, Next, Nest and PostgreSQL — in place of the abstract
+ * solids the museum ships with. The first four were the MERN set this file
+ * started as; the last three are the rest of what the portrait's tag list claims,
+ * which is the only reason a hall of six pedestals a side now has seven marks to
+ * deal from.
  *
  * They are EXTRUDED SILHOUETTES rather than modelled objects, which is the one
  * decision here worth explaining. A logo is a flat drawing; the honest way to
@@ -29,9 +33,9 @@
  *   one, so the hall's lamp lights them instead of them lighting themselves.
  *   That single change is most of the difference between a toy and an object.
  *
- * Built once, at module scope. Six pedestals a side and four marks means each
- * geometry is shared by three meshes on each wall, which is exactly what sharing
- * a BufferGeometry is for.
+ * Built once, at module scope. Six pedestals a side and seven marks means every
+ * geometry here is shared by two or three meshes across the hall, which is
+ * exactly what sharing a BufferGeometry is for.
  */
 
 import { Box3, ExtrudeGeometry, Path, Shape } from "three";
@@ -147,6 +151,59 @@ function stroke(
   bar.closePath();
 
   return bar;
+}
+
+/** A disc. Its own helper because three marks below want one — as a body, as a
+ *  nucleus and as a pair of eyes — and only the last of those is at the origin. */
+function circle(radius: number, cx = 0, cy = 0): Shape {
+  const disc = new Shape();
+  disc.absarc(cx, cy, radius, 0, Math.PI * 2, false);
+  return disc;
+}
+
+/** A triangle with its corners taken off, drawn point-DOWN.
+ *
+ *  The rounding is a quadratic through the true vertex from a point `corner` back
+ *  along each edge, which is the cheap way to round a polygon and the only one
+ *  that keeps the flat of every edge exactly where the straight triangle put it.
+ *
+ *  `reverse` walks the vertices the other way round. That is what makes one of
+ *  these usable as a HOLE: three.js triangulates a hole from its winding, and a
+ *  hole wound the same way as its shape comes out filled in. */
+function roundedTriangle(radius: number, corner: number, reverse = false): Shape {
+  const points = Array.from({ length: 3 }, (_, k) => {
+    const angle = -Math.PI / 2 + (k * Math.PI * 2) / 3;
+    return [Math.cos(angle) * radius, Math.sin(angle) * radius] as const;
+  });
+  if (reverse) points.reverse();
+
+  /** `corner` units from one vertex toward the next. */
+  const toward = (
+    from: readonly [number, number],
+    to: readonly [number, number],
+  ) => {
+    const dx = to[0] - from[0];
+    const dy = to[1] - from[1];
+    const span = Math.hypot(dx, dy) || 1;
+    return [
+      from[0] + (dx / span) * corner,
+      from[1] + (dy / span) * corner,
+    ] as const;
+  };
+
+  const shape = new Shape();
+  for (let k = 0; k < 3; k++) {
+    const here = points[k];
+    const from = toward(here, points[(k + 2) % 3]);
+    const to = toward(here, points[(k + 1) % 3]);
+
+    if (k === 0) shape.moveTo(from[0], from[1]);
+    else shape.lineTo(from[0], from[1]);
+    shape.quadraticCurveTo(here[0], here[1], to[0], to[1]);
+  }
+
+  shape.closePath();
+  return shape;
 }
 
 function roundedRect(width: number, height: number, radius: number): Shape {
@@ -324,16 +381,7 @@ const [REACT_ORBITS, REACT_NUCLEUS] = markParts([
       return orbit;
     }),
   },
-  {
-    depth: 0.34,
-    shapes: [
-      (() => {
-        const nucleus = new Shape();
-        nucleus.absarc(0, 0, 0.115, 0, Math.PI * 2, false);
-        return nucleus;
-      })(),
-    ],
-  },
+  { depth: 0.34, shapes: [circle(0.115)] },
 ]);
 
 /* ------------------------------------------------------------------ *
@@ -368,18 +416,153 @@ const [NODE_BODY, NODE_FACE] = markParts([
 ]);
 
 /* ------------------------------------------------------------------ *
+ * Next.js — the disc
+ * ------------------------------------------------------------------ */
+
+/** A dark disc with a white N in it, which is the mark as it is actually drawn.
+ *
+ *  The N is three separate strokes rather than one outline, and the right-hand
+ *  one is a SHORT bar at the top rather than a full stem — that clipped stem is
+ *  the whole character of the mark, and an N with two full legs in a circle is
+ *  just a letter in a circle.
+ *
+ *  Every stroke has to finish inside the disc, bevel included: the plate is cut
+ *  to the circle, so anything drawn past it hangs in the air with nothing behind
+ *  it. The diagonal is the one that gets close, which is why it stops at 0.22,
+ *  −0.28 rather than running to the rim the way the drawn logo does. */
+const NEXT_WEIGHT = 0.078;
+
+const [NEXT_DISC, NEXT_LETTER] = markParts([
+  { shapes: [circle(HALF)], depth: 0.22 },
+  {
+    depth: 0.3,
+    shapes: [
+      // Left stem, full height.
+      stroke(-0.16, 0, Math.PI / 2, 0.48, NEXT_WEIGHT),
+      // The diagonal, from the top of that stem down toward the rim.
+      stroke(0.03, -0.02, -0.94, 0.64, NEXT_WEIGHT),
+      // Right stem, cut off a third of the way down.
+      stroke(0.17, 0.145, Math.PI / 2, 0.19, NEXT_WEIGHT),
+    ],
+  },
+]);
+
+/* ------------------------------------------------------------------ *
+ * NestJS — the ribbon
+ * ------------------------------------------------------------------ */
+
+/** The one approximation in the set, and worth saying so plainly: the real Nest
+ *  mark is a ribbon that loops and crosses OVER itself, and a crossing is exactly
+ *  what a single extruded plate cannot express — the strand in front and the
+ *  strand behind would be the same flat face.
+ *
+ *  What survives the reduction is what makes it recognisable at 90cm across a
+ *  dark hall: the crimson, and a band that closes on itself.
+ *
+ *  So the middle is left OPEN. Filled, it came out a solid rounded triangle —
+ *  which is a yield sign, not a ribbon, and no amount of colour on top fixes
+ *  that. A hole is what makes a band read as a band, and it costs nothing: the
+ *  museum is behind it either way.
+ *
+ *  The deeper crimson bar laid across the lower-left run is where the ribbon
+ *  crosses over itself in the real mark. It is the one place a flat plate can
+ *  admit that a crossing exists — as a change of colour rather than of depth —
+ *  and it is also this mark's colour break, which every other mark in the set
+ *  has and a bare ring would not. */
+const NEST_RADIUS = 0.52;
+const NEST_HOLE = NEST_RADIUS * 0.5;
+
+/** The crossing, placed on the ring rather than typed in: it sits halfway along
+ *  the band, on the normal of the lower-left edge, lying across it. Apothem is
+ *  half the circumradius for a triangle, so the band spans that to half of it
+ *  again, and the bar is set at the middle of that span and drawn long enough to
+ *  overhang both edges. */
+const NEST_CROSS_ANGLE = (Math.PI * 7) / 6;
+const NEST_BAND_MID = (NEST_RADIUS / 2 + NEST_HOLE / 2) / 2;
+
+const NEST_RIBBON_SHAPE = roundedTriangle(NEST_RADIUS, 0.15);
+NEST_RIBBON_SHAPE.holes.push(roundedTriangle(NEST_HOLE, 0.075, true));
+
+const [NEST_RIBBON, NEST_CROSSING] = markParts([
+  { shapes: [NEST_RIBBON_SHAPE] },
+  {
+    depth: 0.32,
+    shapes: [
+      stroke(
+        Math.cos(NEST_CROSS_ANGLE) * NEST_BAND_MID,
+        Math.sin(NEST_CROSS_ANGLE) * NEST_BAND_MID,
+        NEST_CROSS_ANGLE,
+        0.3,
+        0.12,
+      ),
+    ],
+  },
+]);
+
+/* ------------------------------------------------------------------ *
+ * PostgreSQL — the elephant
+ * ------------------------------------------------------------------ */
+
+/** Slonik, head on.
+ *
+ *  Drawn facing FORWARD rather than in the logo's three-quarter view, and that is
+ *  the trade this mark makes on purpose. In profile an elephant head is a blue
+ *  blob with a hook on it unless the trunk, tusk and eye all land exactly right;
+ *  head on, two ears and a trunk are unmistakable from across a room, at any
+ *  angle you happen to drive past it. Nobody who knows the database will miss a
+ *  blue elephant, and that is the whole job.
+ *
+ *  The ears carry it. The outline pinches in at the cheeks and again above the
+ *  trunk, so the silhouette has two waists in it — without those it comes out as
+ *  a shield, which is the failure mode of every simplified animal head. */
+function elephantHead(): Shape {
+  const head = new Shape();
+
+  head.moveTo(-0.055, -HALF);
+  // Left side of the trunk, up to where it meets the face.
+  head.bezierCurveTo(-0.09, -0.34, -0.1, -0.27, -0.1, -0.2);
+  // Cheek, flaring out from the trunk.
+  head.bezierCurveTo(-0.18, -0.19, -0.22, -0.11, -0.22, -0.02);
+  // Left ear: out, up and over.
+  head.bezierCurveTo(-0.37, 0.0, -0.46, 0.14, -0.42, 0.28);
+  head.bezierCurveTo(-0.4, 0.41, -0.27, 0.46, -0.15, 0.41);
+  // Crown between the ears.
+  head.bezierCurveTo(-0.09, HALF, 0.09, HALF, 0.15, 0.41);
+  // Right ear, mirrored.
+  head.bezierCurveTo(0.27, 0.46, 0.4, 0.41, 0.42, 0.28);
+  head.bezierCurveTo(0.46, 0.14, 0.37, 0.0, 0.22, -0.02);
+  // Right cheek, and back down the trunk.
+  head.bezierCurveTo(0.22, -0.11, 0.18, -0.19, 0.1, -0.2);
+  head.bezierCurveTo(0.1, -0.27, 0.09, -0.34, 0.055, -HALF);
+  head.closePath();
+
+  return head;
+}
+
+const [POSTGRES_HEAD, POSTGRES_EYES] = markParts([
+  { shapes: [elephantHead()] },
+  { depth: 0.32, shapes: [circle(0.05, -0.12, 0.13), circle(0.05, 0.12, 0.13)] },
+]);
+
+/* ------------------------------------------------------------------ *
  * The set
  * ------------------------------------------------------------------ */
 
-/** In stack order, so the pedestals spell M-E-R-N down the hall.
+/** The MERN four first, in the order that spells them, then the three the stack
+ *  actually runs on.
  *
  *  Brand colours, which is the whole reason <Museum> lets an exhibit override
- *  the theme at all — the museum's own pink-and-blue pair would make four
- *  differently-shaped ornaments out of four logos. Each `emissive` is a heavily
+ *  the theme at all — the museum's own pink-and-blue pair would make seven
+ *  differently-shaped ornaments out of seven logos. Each `emissive` is a heavily
  *  darkened version of its own colour rather than a bright one: the museum
  *  multiplies it by 0.9 in a lit hall, and at full brightness these stopped
- *  looking like painted objects and started looking like light fittings. */
-const MERN: Exhibit[] = [
+ *  looking like painted objects and started looking like light fittings.
+ *
+ *  Next's disc is the exception that proves it. Its true colour is black, and a
+ *  black disc in an unlit hall is a hole in the wall rather than an object — so
+ *  it is lifted to a charcoal, exactly as far as it takes for the rim to catch
+ *  the hall's one lamp. */
+const STACK: Exhibit[] = [
   [
     { geometry: null, color: "#4faa41", emissive: "#0d2b0a", ...PAINT },
     { geometry: null, color: "#0f5c46", emissive: "#04170f", ...PAINT },
@@ -397,35 +580,54 @@ const MERN: Exhibit[] = [
     { geometry: null, color: "#33682f", emissive: "#0a1a09", ...PAINT },
     { geometry: null, color: "#8cc84b", emissive: "#243611", ...PAINT },
   ],
+  [
+    { geometry: null, color: "#1b1d23", emissive: "#06070a", ...PAINT },
+    { geometry: null, color: "#f2f5f8", emissive: "#2f343b", ...PAINT },
+  ],
+  [
+    { geometry: null, color: "#e0234e", emissive: "#380a17", ...PAINT },
+    { geometry: null, color: "#9c1436", emissive: "#26060f", ...PAINT },
+  ],
+  [
+    { geometry: null, color: "#336791", emissive: "#0c1a25", ...PAINT },
+    { geometry: null, color: "#eef4f8", emissive: "#2c3a44", ...PAINT },
+  ],
 ];
 
 /** The geometries, in the same order as the skins above. Kept as a parallel list
- *  rather than written into MERN so the colours stay readable as a palette. */
-const MERN_GEOMETRY: BufferGeometry[][] = [
+ *  rather than written into STACK so the colours stay readable as a palette. */
+const STACK_GEOMETRY: BufferGeometry[][] = [
   [MONGO_LIGHT, MONGO_DARK, MONGO_STEM],
   [EXPRESS_PLATE, EXPRESS_TYPE],
   [REACT_ORBITS, REACT_NUCLEUS],
   [NODE_BODY, NODE_FACE],
+  [NEXT_DISC, NEXT_LETTER],
+  [NEST_RIBBON, NEST_CROSSING],
+  [POSTGRES_HEAD, POSTGRES_EYES],
 ];
 
-const MARKS: Exhibit[] = MERN.map((parts, m) =>
+const MARKS: Exhibit[] = STACK.map((parts, m) =>
   parts.map((part, p) => ({
     ...part,
     // attach="geometry" is what puts the shared BufferGeometry on the mesh the
     // museum wraps this in — the declarative <extrudeGeometry> form would build a
     // fresh one per pedestal and none of them could be pre-seated.
-    geometry: <primitive attach="geometry" object={MERN_GEOMETRY[m][p]} />,
+    geometry: <primitive attach="geometry" object={STACK_GEOMETRY[m][p]} />,
   })),
 );
 
 /**
  * The stack, dealt along a plinth.
  *
- * `side` shifts the starting mark by two, so the two walls run out of step: the
- * −z plinth opens on MongoDB and the +z plinth opens on React. With four marks
- * over six pedestals the alternative is both walls dealing the identical hand,
- * and a hall that repeats itself across its own centreline looks like a mistake
- * even when every object in it is right.
+ * `side` shifts the starting mark, so the two walls run out of step: the −z
+ * plinth opens on MongoDB and the +z plinth opens on Node. Without the shift both
+ * walls deal the identical hand, and a hall that repeats itself across its own
+ * centreline looks like a mistake even when every object in it is right.
+ *
+ * Seven marks over six pedestals means each wall is one short of the full set —
+ * the −z wall never reaches PostgreSQL, the +z wall never reaches React — and
+ * that is the better half of the bargain: there is something on the other side of
+ * the hall that isn't on this one, which is a reason to drive back down it.
  */
-export const mernExhibits = (i: number, side: 1 | -1): Exhibit =>
-  MARKS[(i + (side > 0 ? 2 : 0)) % MARKS.length];
+export const stackExhibits = (i: number, side: 1 | -1): Exhibit =>
+  MARKS[(i + (side > 0 ? 3 : 0)) % MARKS.length];
