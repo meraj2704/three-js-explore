@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 import { SRGBColorSpace } from "three";
-import type { Group } from "three";
+import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
 
 import {
   PORTRAIT_HALF_DEPTH,
@@ -107,6 +107,17 @@ export type MuseumTheme = {
   strip: string;
   stripEmissive: string;
   light: string;
+  /* The centrepiece display. Its own tokens rather than borrowing artworkFrame /
+   * artworkPanel: those dress the six frames hung on the walls, and a colour
+   * picked for the portrait would silently restyle the whole gallery with it. */
+  deck: string;
+  deckCap: string;
+  panelShell: string;
+  panelScreen: string;
+  panelAccent: string;
+  panelText: string;
+  panelMuted: string;
+  panelLive: string;
 };
 
 export const defaultMuseumTheme: MuseumTheme = {
@@ -129,61 +140,230 @@ export const defaultMuseumTheme: MuseumTheme = {
   strip: "#fff7ed",
   stripEmissive: "#ffedd5",
   light: "#ffe9c9",
+  /* Cold hardware against warm sandstone. The contrast is the point: in a stone
+   * room lit by one warm lamp, the one thing glowing cyan reads as the one thing
+   * that is switched ON — which is the entire difference between a display and a
+   * memorial. */
+  deck: "#20262f",
+  deckCap: "#2c3440",
+  panelShell: "#161b23",
+  panelScreen: "#0d1219",
+  panelAccent: "#22d3ee",
+  panelText: "#e8f7ff",
+  panelMuted: "#8aa6bb",
+  panelLive: "#4ade80",
 };
 
+/** How high above its pedestal an exhibit is seated. Exported because it is a
+ *  contract, not a detail: the museum places every exhibit at this one height,
+ *  so a shape that wants to STAND on the pedestal rather than hover over it has
+ *  to be drawn — or translated — with its underside this far below its origin.
+ *  The primitives below are all radius ~0.45 and so seat themselves; anything
+ *  built to its own proportions has to do the arithmetic, and this is the number
+ *  it does it against. */
+export const EXHIBIT_SEAT = 0.45;
+
+/**
+ * One piece of one exhibit.
+ *
+ * `geometry` is the geometry ELEMENT only — the mesh and the lit glow stay with
+ * the component, which is what keeps a hall of exhibits looking like one hall
+ * however they were supplied.
+ *
+ * Everything else is an override, and they exist for one reason: an ABSTRACT
+ * exhibit wants the museum's own look, because matching is what makes the two
+ * plinths read as a set — but a real-world mark cannot have it. A MongoDB leaf
+ * in the museum's salmon pink is not a MongoDB leaf, and a logo rendered in the
+ * half-metal, low-roughness recipe the abstract solids use is not a logo, it is
+ * a boiled sweet in the shape of one. Leave them off and the museum decides.
+ */
+export type ExhibitPart = {
+  geometry: ReactNode;
+  color?: string;
+  emissive?: string;
+  metalness?: number;
+  roughness?: number;
+  /** Nudge within the exhibit's own frame, before it is turned to face the hall.
+   *  Mostly for a face that stands proud of the body behind it. */
+  offset?: [number, number, number];
+};
+
+/**
+ * One thing standing on a pedestal, as a list of parts.
+ *
+ * A list rather than a single mesh because a real mark is rarely one colour: a
+ * MongoDB leaf is two greens meeting at a fold, a Node hexagon is a light face
+ * on a dark body. One mesh can carry one material, so a one-mesh exhibit can
+ * only ever be a silhouette — which is exactly what these looked like.
+ *
+ * The parts share one frame and one seat, so they stay registered to each other
+ * however many there are.
+ */
+export type Exhibit = ExhibitPart[];
+
 /** Default exhibit shapes, cycled so a longer hall keeps varying instead of
- *  repeating one form. Return ONLY the geometry element — the mesh and
- *  material stay with the component, so the theme colour and the lit glow
- *  still apply to whatever you return. */
-export const defaultExhibitGeometry = (i: number): ReactNode =>
-  i % 3 === 0 ? (
-    <icosahedronGeometry args={[0.45, 0]} />
-  ) : i % 3 === 1 ? (
-    <torusGeometry args={[0.34, 0.13, 12, 24]} />
-  ) : (
-    <octahedronGeometry args={[0.5, 0]} />
-  );
+ *  repeating one form. One part each and no overrides on purpose — these are the
+ *  abstract set, and they take the theme's colours and the museum's material. */
+export const defaultExhibits = (i: number): Exhibit => [
+  {
+    geometry:
+      i % 3 === 0 ? (
+        <icosahedronGeometry args={[0.45, 0]} />
+      ) : i % 3 === 1 ? (
+        <torusGeometry args={[0.34, 0.13, 12, 24]} />
+      ) : (
+        <octahedronGeometry args={[0.5, 0]} />
+      ),
+  },
+];
 
 /* ------------------------------------------------------------------ *
- * The centrepiece portrait
- * ------------------------------------------------------------------ */
+ * The centrepiece: a workstation, not a shrine
+ * ------------------------------------------------------------------ *
+ * This used to be a black frame on a waist-high stone plinth, lit warm, with a
+ * name engraved on a plate below it and the same name repeated on the back. Read
+ * the list: black frame, catafalque, face held above the viewer, a slab square
+ * to the room, all-caps name alone on a plate, no motion. Every one of those is
+ * a funeral cue, and together they made a living developer look interred.
+ *
+ * So the whole thing is rebuilt as the object a developer is actually behind: a
+ * display on a low deck, tilted back on an arm, screen lit and running — name,
+ * role and a live status on the readout, the stack on the back, and a slow orbit
+ * around it so the exhibit is never completely still.
+ *
+ * What that redesign is allowed to spend is worth stating, because it is the
+ * only real constraint here. isOnPavement's hole is TWO DIMENSIONAL: it tests x
+ * and z against PORTRAIT_HALF_DEPTH / PORTRAIT_HALF_Z and never looks at y. So
+ * the deck cap below is still drawn to exactly those two constants — that part
+ * is untouchable — and in exchange every vertical decision is free. Lowering the
+ * plinth, floating the head off it, tilting it, hanging an orbit at head height:
+ * none of it costs worldGeometry a line.
+ */
 
 /** Whose museum this is. `src` is a path under public/ — the image is loaded as
  *  a texture, not an <img>, so next/image is no help here and a plain URL is
- *  what the loader wants. */
+ *  what the loader wants.
+ *
+ *  Everything below `src` is optional and each line simply doesn't render when
+ *  missing, so a museum can show a face and nothing else. They live on the type
+ *  rather than as literals inside the component for the same reason `name` and
+ *  `theme` do: this is one reusable building, and the second one is a prop away. */
 export type MuseumPortrait = {
   src: string;
-  /** Engraved across the nameplate under the picture, and repeated on the back
-   *  of the frame for anyone who drives around it. */
+  /** The name, across the readout under the picture. */
   caption?: string;
+  /** What they do — the line that stops a name on its own reading as an epitaph. */
+  role?: string;
+  /** Present tense, next to the live indicator: what they are doing NOW. */
+  status?: string;
+  /** The stack, as chips on the BACK of the display. The back is what a driver
+   *  circling the deck sees, and it used to be the name again on a slab — which
+   *  is a headstone however warmly it is lit. This is the fix. */
+  tags?: string[];
   /** Width : height of the source file, so a picture that is not square is
    *  matted to fit instead of being stretched to the frame. */
   aspect?: number;
 };
 
-/** Sized to stand a person at roughly life scale against an 11-high hall: the
- *  frame's top lands near 6, about eye level from a car, and its footprint is
- *  small enough that the room still reads as a room you drive around in.
+/** The deck. Low on purpose — a shrine puts the face above you, a desk puts it
+ *  in front of you, and the height is most of the difference.
  *
- *  PLINTH_CAP_* are the widest parts, and PORTRAIT_HALF_DEPTH / PORTRAIT_HALF_Z
- *  in worldGeometry are drawn to them. Change one of these and the collision box
- *  no longer wraps what you can see — that pair is the whole contract. */
-const PORTRAIT_PLINTH_HEIGHT = 1.25;
-const PORTRAIT_PLINTH_DEPTH = 2.2;
-const PORTRAIT_PLINTH_WIDTH = 4.4;
-const PORTRAIT_PLINTH_CAP_DEPTH = PORTRAIT_HALF_DEPTH * 2;
-const PORTRAIT_PLINTH_CAP_WIDTH = PORTRAIT_HALF_Z * 2;
-const PORTRAIT_PLINTH_CAP_THICKNESS = 0.16;
+ *  CAP_DEPTH / CAP_WIDTH are the widest parts and are the collision contract
+ *  itself: they ARE PORTRAIT_HALF_DEPTH / PORTRAIT_HALF_Z doubled. Everything
+ *  else in this exhibit may be retuned freely; if you change these two, the
+ *  invisible hole in the hall floor no longer matches the thing standing in it.
+ *
+ *  BODY_DEPTH is short for a reason worth knowing before you widen it. The kerb
+ *  test takes the car's half-WIDTH as its margin whatever way the car is
+ *  pointing, but the car is 3 long — so a car driven nose-first at this exhibit
+ *  stops with its CENTRE 2.14 out from the middle, which puts its front wheels
+ *  0.82 out and its bumper 0.62. Those numbers are what this deck is cut to: the
+ *  lower body clears the 0.28 top by a whisker, and the solid mass is drawn back
+ *  inside 0.82 so the wheels never reach it. What the wheels can still reach is
+ *  the cap's lip, and the cap is the one part that cannot move. That is the
+ *  bargain: an overhang a wheel can tuck under, not a block it drives into. */
+const DECK_HEIGHT = 0.28;
+const DECK_BODY_DEPTH = 1.5;
+const DECK_BODY_WIDTH = 4;
+const DECK_CAP_DEPTH = PORTRAIT_HALF_DEPTH * 2;
+const DECK_CAP_WIDTH = PORTRAIT_HALF_Z * 2;
+const DECK_CAP_THICKNESS = 0.14;
 
-const PORTRAIT_FRAME_THICKNESS = 0.28;
-const PORTRAIT_FRAME_WIDTH = 4;
-const PORTRAIT_FRAME_HEIGHT = 4.7;
+/** The lit inset in the deck's top face — the powered plate the arm grows out
+ *  of. Inset well in from the cap: at the full width of the deck it stopped
+ *  reading as a light let into a surface and started reading as a tablecloth. */
+const DECK_APERTURE_DEPTH = 0.75;
+const DECK_APERTURE_WIDTH = 2.4;
 
-/** Picture area, and the reveal of frame left around it. The nameplate is
- *  whatever is left below — deriving it that way is what stops the caption from
- *  drifting onto the picture when these are retuned. */
-const PORTRAIT_IMAGE_SIZE = 3.3;
-const PORTRAIT_IMAGE_TOP_INSET = 0.35;
+/** The display head, and how far it leans back. About six degrees is enough:
+ *  a slab standing square to the room is icon geometry, and the tilt is what
+ *  makes the same slab read as something angled for someone to work at.
+ *
+ *  LANDSCAPE, and that is not a style choice — it is the one thing here that had
+ *  to be measured. The chase camera seats itself 2.5 up and looks DOWN at the
+ *  car's roof, which puts the top of frame only about five degrees above
+ *  horizontal; at the distance you actually stop at, anything above roughly 3.3
+ *  is outside the picture. A portrait-shaped card tall enough to stack a photo
+ *  over three lines of text does not fit under that, and the first build proved
+ *  it by cropping the top of his head.
+ *
+ *  Turning the card on its side is what buys the room back: photo on one half,
+ *  readout on the other, and the whole thing tops out under the line. It also
+ *  happens to be the better composition — a face beside its details reads as a
+ *  profile, where a face above an inscription reads as a plaque. */
+const PANEL_HEIGHT = 2.6;
+const PANEL_WIDTH = 4.3;
+const PANEL_THICKNESS = 0.16;
+const PANEL_TILT = 0.11;
+
+/** Clear air between the deck's top and the bottom edge of the head. The arm
+ *  spans it, and BOTH the arm's length and its lean are derived from this below
+ *  rather than typed — retune the lift or the tilt and the arm still lands on
+ *  the deck at one end and inside the head at the other. */
+const PANEL_LIFT = 0.44;
+
+/** The glowing rim left proud around the screen, and how far the screen board is
+ *  inset from the edge of the head. */
+const PANEL_BEZEL = 0.09;
+const PANEL_INSET = 0.16;
+
+/** Picture area, and the margin between it and the screen edge it sits against.
+ *  Bounded by the screen's HEIGHT on a landscape card, so it is a plain size
+ *  rather than a fraction — and it is not large: the source is a 200x200 file,
+ *  which does not want enlarging. */
+const PICTURE_SIZE = 1.8;
+const PICTURE_MARGIN = 0.07;
+
+/** The gutter between the picture and the readout column beside it. */
+const READOUT_GUTTER = 0.2;
+
+/** One pass of the scan bar, top to bottom, and how strong it gets at the middle
+ *  of that pass. Deliberately faint: additive light over a brightly lit face
+ *  washes straight to white, and at anything above about this it stops reading as
+ *  a refresh and starts reading either as a rendering seam or — worse, when it
+ *  was scoped to the picture alone — as a laser line drawn across someone's eyes.
+ *  It sweeps the whole screen for the same reason: a display refreshes, a
+ *  scanner targets, and only one of those is what this exhibit is doing. */
+const SCAN_PERIOD = 4.2;
+const SCAN_THICKNESS = 0.05;
+const SCAN_PEAK = 0.3;
+
+/** Rough advance width of an SDF glyph, as a fraction of its font size. Used
+ *  only to size the stack chips around their labels: troika measures text
+ *  asynchronously, well after this frame's layout, so anything that has to be
+ *  sized WITH the text has to estimate it. Erring wide is deliberate — a chip a
+ *  little too big reads as padding, one too small reads as a bug. */
+const GLYPH_ADVANCE = 0.62;
+
+const CHIP_FONT = 0.16;
+const CHIP_PADDING = 0.18;
+const CHIP_MAX_STEP = 0.5;
+const CHIP_MAX_HEIGHT = 0.34;
+
+/** Above this many, the stack is dealt in two columns instead of one. A landscape
+ *  back is wide and short, so a single list of six runs off the bottom while half
+ *  the board sits empty either side of it. */
+const CHIP_COLUMN_LIMIT = 3;
 
 /* ------------------------------------------------------------------ *
  * The wall gallery
@@ -382,20 +562,101 @@ function deriveLayout(g: MuseumGeometry) {
   };
 }
 
-/* Derived once, module scope: the frame's front face, and the heights the
- * picture and the nameplate hang at. Written as arithmetic on the constants
- * above rather than as numbers so that retuning the frame moves its contents
- * with it — the nameplate in particular is the leftover strip under the picture,
- * and would otherwise creep onto it. */
-const PORTRAIT_FACE_X = PORTRAIT_FRAME_THICKNESS / 2;
-const PORTRAIT_FRAME_Y = PORTRAIT_PLINTH_HEIGHT + PORTRAIT_FRAME_HEIGHT / 2;
-const PORTRAIT_IMAGE_Y =
-  PORTRAIT_PLINTH_HEIGHT +
-  PORTRAIT_FRAME_HEIGHT -
-  PORTRAIT_IMAGE_TOP_INSET -
-  PORTRAIT_IMAGE_SIZE / 2;
-const PORTRAIT_PLATE_Y =
-  (PORTRAIT_PLINTH_HEIGHT + PORTRAIT_IMAGE_Y - PORTRAIT_IMAGE_SIZE / 2) / 2;
+/* ------------------------------------------------------------------ *
+ * Derived once, at module scope. Everything the display is made of is arithmetic
+ * on the constants above and never a typed-in number, because the pieces have to
+ * move TOGETHER: retune the tilt and the arm has to re-aim, shrink the picture
+ * and the readout has to grow into the space rather than the caption creeping
+ * onto the face. That was the one thing the old frame got right, and it is worth
+ * keeping through a redesign that changed everything else.
+ * ------------------------------------------------------------------ */
+
+const PANEL_HALF_HEIGHT = PANEL_HEIGHT / 2;
+
+/** Where the head sits, and how far its bottom edge swings forward as it leans
+ *  back. Both fall out of the tilt: the head is positioned so its bottom edge
+ *  lands exactly PANEL_LIFT above the deck whatever angle it is set to. */
+const PANEL_BOTTOM_Y = DECK_HEIGHT + PANEL_LIFT;
+const PANEL_BOTTOM_X = Math.sin(PANEL_TILT) * PANEL_HALF_HEIGHT;
+const PANEL_Y = PANEL_BOTTOM_Y + Math.cos(PANEL_TILT) * PANEL_HALF_HEIGHT;
+
+/** The arm, aimed from the middle of the deck at the middle of the head's bottom
+ *  edge. A cylinder points along +y, so the rotation that swings it onto that
+ *  line is atan2(-dx, dy) — and the extra length is overlap, sunk half into the
+ *  deck and half into the head so neither joint shows a seam. */
+const ARM_LENGTH = Math.hypot(PANEL_BOTTOM_X, PANEL_LIFT) + 0.32;
+const ARM_TILT = Math.atan2(-PANEL_BOTTOM_X, PANEL_LIFT);
+const ARM_X = PANEL_BOTTOM_X / 2;
+const ARM_Y = DECK_HEIGHT + PANEL_LIFT / 2;
+
+/* Everything from here is in the HEAD's own frame — measured from the middle of
+ * the display, which is why none of it mentions the tilt or the lift. The head's
+ * group carries both, so its contents never have to know. */
+
+const PANEL_FACE_X = PANEL_THICKNESS / 2;
+const SCREEN_HALF_WIDTH = PANEL_WIDTH / 2 - PANEL_INSET;
+const SCREEN_HALF_HEIGHT = PANEL_HALF_HEIGHT - PANEL_INSET;
+
+/* On this card z is the HORIZONTAL axis and y is vertical: the head faces +x, so
+ * its contents are laid out in the y/z plane. Viewed from the front, +z is the
+ * viewer's LEFT — which is why the picture, on the left of the card, has a
+ * positive z, and why the readout column beside it runs off into -z. */
+
+/** The picture, held against the left edge of the screen and centred on the
+ *  card's own middle. Bounded by the screen's height here rather than its width,
+ *  which is the whole reason a landscape card has room for a column beside it. */
+const PICTURE_Z = SCREEN_HALF_WIDTH - PICTURE_MARGIN - PICTURE_SIZE / 2;
+const PICTURE_Y = 0;
+
+/** The readout column: the rest of the screen, from the gutter beside the picture
+ *  out to the far edge. Its rows are placed as fractions of the screen height and
+ *  SIZED as a fraction of the column's width, so the block reproportions itself
+ *  rather than three hardcoded numbers drifting apart when the card is retuned. */
+const READOUT_START_Z = PICTURE_Z - PICTURE_SIZE / 2 - READOUT_GUTTER;
+const READOUT_END_Z = -SCREEN_HALF_WIDTH + 0.14;
+const READOUT_WIDTH = READOUT_START_Z - READOUT_END_Z;
+const NAME_Y = SCREEN_HALF_HEIGHT * 0.42;
+const RULE_Y = SCREEN_HALF_HEIGHT * 0.15;
+const ROLE_Y = -SCREEN_HALF_HEIGHT * 0.06;
+const STATUS_Y = -SCREEN_HALF_HEIGHT * 0.48;
+const NAME_SIZE = READOUT_WIDTH * 0.115;
+const ROLE_SIZE = READOUT_WIDTH * 0.072;
+const STATUS_SIZE = READOUT_WIDTH * 0.068;
+
+/** The live indicator, sitting at the head of the status line the way a bullet
+ *  would — but as geometry, so it can pulse on its own and needs no text metrics
+ *  to place. The status line is indented past it; every other row starts at the
+ *  column's edge. */
+const LIVE_DOT_RADIUS = 0.055;
+const LIVE_DOT_Z = READOUT_START_Z - LIVE_DOT_RADIUS;
+const STATUS_INDENT = LIVE_DOT_RADIUS * 3.5;
+
+/** The scan bar's travel: the whole screen, edge to edge. */
+const SCAN_TOP = SCREEN_HALF_HEIGHT;
+const SCAN_BOTTOM = -SCREEN_HALF_HEIGHT;
+
+/** The stack board on the back: a header, then the band the chips are dealt into,
+ *  and the two column centres they alternate between. */
+const STACK_HEADER_Y = SCREEN_HALF_HEIGHT - 0.2;
+const STACK_TOP = STACK_HEADER_Y - 0.34;
+const STACK_BOTTOM = -SCREEN_HALF_HEIGHT + 0.14;
+const STACK_BAND = STACK_TOP - STACK_BOTTOM;
+const STACK_COLUMN_Z = SCREEN_HALF_WIDTH / 2;
+
+/** The depth ladder. Coplanar surfaces z-fight, so each layer of the display
+ *  stands one step proud of the one behind it: shell, bezel glow, screen board,
+ *  picture, scan bar, text. Six steps is 0.07 of relief — invisible edge-on, and
+ *  the reason nothing here flickers. Same ladder mirrored on the back. */
+const LAYER = 0.012;
+const layerX = (step: number) => PANEL_FACE_X + LAYER * step;
+const backLayerX = (step: number) => -PANEL_FACE_X - LAYER * step;
+
+/** Faces for the front and back of the head. The half turn on the back does
+ *  double duty exactly as it does on the wall frames: it aims the content out of
+ *  the panel AND flips the local axis, so the chips read left-to-right from
+ *  behind instead of mirrored. */
+const FACE_FRONT: [number, number, number] = [0, Math.PI / 2, 0];
+const FACE_BACK: [number, number, number] = [0, -Math.PI / 2, 0];
 
 /**
  * Just the picture. Split out because loading a texture SUSPENDS, and the
@@ -467,7 +728,7 @@ function FittedPicture({
 }
 
 /**
- * The portrait, standing in the middle of the hall on its own plinth.
+ * The centrepiece, standing in the middle of the hall on its own deck.
  *
  * Positioned in the museum's LOCAL frame, at +x — which is always the door,
  * because `facing` turns the whole building rather than mirroring it. That is
@@ -483,112 +744,336 @@ function PortraitExhibit({
   theme: MuseumTheme;
   lit: boolean;
 }) {
+  const scanBar = useRef<Mesh>(null);
+  const scanMaterial = useRef<MeshBasicMaterial>(null);
+  const bezelMaterial = useRef<MeshStandardMaterial>(null);
+  const apertureMaterial = useRef<MeshStandardMaterial>(null);
+  const liveMaterial = useRef<MeshStandardMaterial>(null);
+
+  // Chips dealt into as many rows as the band has room for, rather than at a
+  // fixed pitch, so a long stack packs tighter instead of running off the bottom
+  // of the board — the same bargain the exhibit cases and the wall frames make
+  // with their own runs. Two columns past a short list, because the back of a
+  // landscape card is wide and shallow and a single file wastes both halves.
+  const chips = useMemo(() => {
+    const tags = portrait.tags ?? [];
+    if (tags.length === 0) return [];
+
+    const columns = tags.length > CHIP_COLUMN_LIMIT ? 2 : 1;
+    const rows = Math.ceil(tags.length / columns);
+    const step = Math.min(CHIP_MAX_STEP, STACK_BAND / rows);
+
+    return tags.map((label, i) => ({
+      label,
+      // Filled across then down, so the reading order is the order they're given.
+      // The first column is at NEGATIVE z, because this board is read from
+      // BEHIND the head — where the panel's +z is on the viewer's right, not
+      // their left. Get the sign wrong and the list is legible but back to front.
+      z: columns === 1 ? 0 : (i % 2 === 0 ? -1 : 1) * STACK_COLUMN_Z,
+      y: STACK_TOP - (Math.floor(i / columns) + 0.5) * step,
+      width: label.length * CHIP_FONT * GLYPH_ADVANCE + CHIP_PADDING * 2,
+      height: Math.min(CHIP_MAX_HEIGHT, step - 0.1),
+    }));
+  }, [portrait.tags]);
+
+  // A sweep, two breaths out of phase, and a blink. Four property writes a
+  // frame, no new geometry and — the part that matters in this renderer — NO NEW
+  // LIGHT: everything that appears to glow here is emissive, for the same reason
+  // the hall is down to a single pointLight.
+  //
+  // All of it belongs to the SCREEN, and that is a deliberate correction. The
+  // first build put a rotating orbit ring around the whole exhibit for the same
+  // reason — an exhibit with nothing moving in it reads as something being
+  // preserved — but a hairline ring seen from a car is a diagonal line drifting
+  // across the face, which reads as a broken renderer, not as an orbit. Motion
+  // that lives on a surface that is supposed to be emitting light cannot be
+  // mistaken for a glitch, and that turns out to be the whole trick.
+  //
+  // None of it is gated on `lit`, because it costs the same either way and the
+  // dim values it multiplies are what keep the exhibit dark in an empty hall.
+  useFrame(({ clock }) => {
+    const time = clock.elapsedTime;
+    const pass = (time % SCAN_PERIOD) / SCAN_PERIOD;
+
+    if (scanBar.current) {
+      scanBar.current.position.y = SCAN_TOP - pass * (SCAN_TOP - SCAN_BOTTOM);
+    }
+    // Faded in and out across the pass. Without this the bar teleports back to
+    // the top of the picture at full brightness once every SCAN_PERIOD, which
+    // reads as a glitch rather than as a refresh.
+    if (scanMaterial.current) {
+      scanMaterial.current.opacity =
+        (lit ? SCAN_PEAK : SCAN_PEAK * 0.35) * Math.sin(Math.PI * pass);
+    }
+    if (bezelMaterial.current) {
+      bezelMaterial.current.emissiveIntensity =
+        (lit ? 1.2 : 0.32) * (0.88 + 0.12 * Math.sin(time * 1.6));
+    }
+    // Off the bezel's beat on purpose. Two things breathing in step read as one
+    // thing flashing; out of step they read as a machine with more than one part
+    // to it, which is the impression the whole exhibit is after.
+    if (apertureMaterial.current) {
+      apertureMaterial.current.emissiveIntensity =
+        (lit ? 0.75 : 0.2) * (0.78 + 0.22 * Math.sin(time * 0.9 + 1.1));
+    }
+    if (liveMaterial.current) {
+      liveMaterial.current.emissiveIntensity =
+        (lit ? 2.6 : 0.7) * (0.5 + 0.5 * Math.sin(time * 2.6));
+    }
+  });
+
   return (
     <group position={[PORTRAIT_OFFSET_X, 0, 0]}>
-      {/* Plinth, and a cap that oversails it. The cap is the widest thing here,
-          and PORTRAIT_HALF_DEPTH / PORTRAIT_HALF_Z are drawn to it — a box cut
-          to the frame instead would let the car's nose in under a lip it can
-          plainly see. */}
-      <mesh position={[0, PORTRAIT_PLINTH_HEIGHT / 2, 0]} castShadow receiveShadow>
-        <boxGeometry
-          args={[
-            PORTRAIT_PLINTH_DEPTH,
-            PORTRAIT_PLINTH_HEIGHT,
-            PORTRAIT_PLINTH_WIDTH,
-          ]}
-        />
-        <meshStandardMaterial color={t.plinth} roughness={0.6} />
+      {/* Deck, and a cap that oversails it. The cap is the widest thing here and
+          PORTRAIT_HALF_DEPTH / PORTRAIT_HALF_Z are drawn to it — a box cut to
+          the head instead would let the car's nose in under a lip it can plainly
+          see. This is the one part of the exhibit that is not free to move. */}
+      <mesh position={[0, DECK_HEIGHT / 2, 0]} castShadow receiveShadow>
+        <boxGeometry args={[DECK_BODY_DEPTH, DECK_HEIGHT, DECK_BODY_WIDTH]} />
+        <meshStandardMaterial color={t.deck} metalness={0.35} roughness={0.5} />
       </mesh>
-      <mesh
-        position={[0, PORTRAIT_PLINTH_HEIGHT - PORTRAIT_PLINTH_CAP_THICKNESS / 2, 0]}
-        castShadow
-      >
-        <boxGeometry
-          args={[
-            PORTRAIT_PLINTH_CAP_DEPTH,
-            PORTRAIT_PLINTH_CAP_THICKNESS,
-            PORTRAIT_PLINTH_CAP_WIDTH,
-          ]}
-        />
-        <meshStandardMaterial color={t.cornice} roughness={0.7} />
+      <mesh position={[0, DECK_HEIGHT - DECK_CAP_THICKNESS / 2, 0]} castShadow>
+        <boxGeometry args={[DECK_CAP_DEPTH, DECK_CAP_THICKNESS, DECK_CAP_WIDTH]} />
+        <meshStandardMaterial color={t.deckCap} metalness={0.3} roughness={0.45} />
       </mesh>
 
-      {/* Frame, and the mount board inside it. The board is a hair proud of the
-          frame's face and the picture a hair proud of the board, which is the
-          whole reason the three don't z-fight. */}
-      <mesh position={[0, PORTRAIT_FRAME_Y, 0]} castShadow receiveShadow>
-        <boxGeometry
-          args={[
-            PORTRAIT_FRAME_THICKNESS,
-            PORTRAIT_FRAME_HEIGHT,
-            PORTRAIT_FRAME_WIDTH,
-          ]}
-        />
-        <meshStandardMaterial color={t.artworkFrame} roughness={0.85} />
-      </mesh>
-      <mesh
-        position={[PORTRAIT_FACE_X + 0.01, PORTRAIT_FRAME_Y, 0]}
-        rotation={[0, Math.PI / 2, 0]}
-      >
-        <planeGeometry
-          args={[PORTRAIT_FRAME_WIDTH - 0.5, PORTRAIT_FRAME_HEIGHT - 0.5]}
-        />
+      {/* The lit plate in the deck's top face. Laid ON the cap rather than let
+          into it — a hair proud, like every other surface in this exhibit, which
+          is cheaper than a hole and doesn't z-fight. */}
+      <mesh position={[0, DECK_HEIGHT + 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
+        <planeGeometry args={[DECK_APERTURE_DEPTH, DECK_APERTURE_WIDTH]} />
         <meshStandardMaterial
-          color={t.facade}
-          emissive={t.stripEmissive}
-          emissiveIntensity={lit ? 0.28 : 0.08}
-          roughness={0.9}
+          ref={apertureMaterial}
+          color={t.panelScreen}
+          emissive={t.panelAccent}
+          emissiveIntensity={lit ? 0.75 : 0.2}
+          roughness={0.4}
         />
       </mesh>
 
-      <Suspense fallback={null}>
-        <FittedPicture
-          src={portrait.src}
-          aspect={portrait.aspect}
-          fitWidth={PORTRAIT_IMAGE_SIZE}
-          fitHeight={PORTRAIT_IMAGE_SIZE}
-          lit={lit}
-          position={[PORTRAIT_FACE_X + 0.02, PORTRAIT_IMAGE_Y, 0]}
-          rotation={[0, Math.PI / 2, 0]}
-        />
-      </Suspense>
+      {/* The arm. Length and lean both derived, so the head can be re-tilted or
+          re-lifted without this having to be re-aimed by hand. Tapered hard, and
+          wide at the foot: a uniform pole over this short a rise reads as a stick
+          the display has been skewered on rather than as something holding it. */}
+      <mesh position={[ARM_X, ARM_Y, 0]} rotation={[0, 0, ARM_TILT]} castShadow>
+        <cylinderGeometry args={[0.085, 0.185, ARM_LENGTH, 14]} />
+        <meshStandardMaterial color={t.deckCap} metalness={0.55} roughness={0.35} />
+      </mesh>
 
-      {/* Nameplate on the strip of board left under the picture, and the same
-          name on the back — a plinth you can drive all the way around should
-          not have a blank side. */}
-      {portrait.caption && (
-        <>
+      {/* The head, tilted back on the arm. Everything inside is measured from the
+          middle of the display, so the tilt lives here and nowhere else. */}
+      <group position={[0, PANEL_Y, 0]} rotation={[0, 0, PANEL_TILT]}>
+        {/* Shell */}
+        <mesh castShadow receiveShadow>
+          <boxGeometry args={[PANEL_THICKNESS, PANEL_HEIGHT, PANEL_WIDTH]} />
+          <meshStandardMaterial
+            color={t.panelShell}
+            metalness={0.45}
+            roughness={0.42}
+          />
+        </mesh>
+
+        {/* Bezel glow, then the screen board on top of it — the strip of bezel
+            left showing around the board IS the rim light. One plane instead of
+            four edge bars, and it breathes, which is most of what sells the
+            display as powered rather than as a picture of one. */}
+        <mesh position={[layerX(1), 0, 0]} rotation={FACE_FRONT}>
+          <planeGeometry
+            args={[
+              (SCREEN_HALF_WIDTH + PANEL_BEZEL) * 2,
+              (SCREEN_HALF_HEIGHT + PANEL_BEZEL) * 2,
+            ]}
+          />
+          <meshStandardMaterial
+            ref={bezelMaterial}
+            color={t.panelAccent}
+            emissive={t.panelAccent}
+            emissiveIntensity={lit ? 1.2 : 0.32}
+            roughness={0.4}
+          />
+        </mesh>
+        {/* Barely emissive, and that is the point: at anything like the rim's
+            brightness the whole board floods teal, the picture stops being the
+            brightest thing on the display and the readout loses its contrast.
+            The screen is meant to be the dark the rim is bright against. */}
+        <mesh position={[layerX(2), 0, 0]} rotation={FACE_FRONT}>
+          <planeGeometry args={[SCREEN_HALF_WIDTH * 2, SCREEN_HALF_HEIGHT * 2]} />
+          <meshStandardMaterial
+            color={t.panelScreen}
+            emissive={t.panelAccent}
+            emissiveIntensity={lit ? 0.045 : 0.015}
+            roughness={0.6}
+          />
+        </mesh>
+
+        <Suspense fallback={null}>
+          <FittedPicture
+            src={portrait.src}
+            aspect={portrait.aspect}
+            fitWidth={PICTURE_SIZE}
+            fitHeight={PICTURE_SIZE}
+            lit={lit}
+            position={[layerX(3), PICTURE_Y, PICTURE_Z]}
+            rotation={FACE_FRONT}
+          />
+        </Suspense>
+
+        {/* The scan bar, riding down the screen. A basic material, so the one
+            thing moving every frame is also the one thing the renderer does least
+            work for — and a TINT rather than added light, which is the less
+            obvious of the two choices. Additive is what a glowing bar physically
+            is, but additive over a brightly lit face saturates instantly to white
+            while the same bar over the dark half of the screen is invisible; one
+            effect that looks like two. A flat alpha tint crosses both halves
+            looking like the same object, which is what actually reads. */}
+        <mesh ref={scanBar} position={[layerX(4), SCAN_TOP, 0]} rotation={FACE_FRONT}>
+          <planeGeometry args={[SCREEN_HALF_WIDTH * 2, SCAN_THICKNESS]} />
+          <meshBasicMaterial
+            ref={scanMaterial}
+            color={t.panelAccent}
+            transparent
+            opacity={0}
+            depthWrite={false}
+          />
+        </mesh>
+
+        {/* Rule under the name, spanning the readout column. */}
+        <mesh
+          position={[layerX(5), RULE_Y, (READOUT_START_Z + READOUT_END_Z) / 2]}
+          rotation={FACE_FRONT}
+        >
+          <planeGeometry args={[READOUT_WIDTH, 0.016]} />
+          <meshStandardMaterial
+            color={t.panelAccent}
+            emissive={t.panelAccent}
+            emissiveIntensity={lit ? 1 : 0.3}
+          />
+        </mesh>
+
+        {/* The live indicator, blinking at the head of the status line. A
+            geometric dot rather than a character in the text, so it needs no text
+            metrics to place and can pulse on its own. */}
+        <mesh
+          position={[layerX(5), STATUS_Y, LIVE_DOT_Z]}
+          rotation={FACE_FRONT}
+        >
+          <circleGeometry args={[LIVE_DOT_RADIUS, 16]} />
+          <meshStandardMaterial
+            ref={liveMaterial}
+            color={t.panelLive}
+            emissive={t.panelLive}
+            emissiveIntensity={lit ? 2.6 : 0.7}
+          />
+        </mesh>
+
+        {/* Name, role, status, ranged left down the column beside the face. The
+            role is the line doing the real work here: a name alone under a
+            portrait is an epitaph, and a name with a job is a person who has one.
+            Left-aligned rather than centred because a ragged-right block reads as
+            a record about someone, and a centred one reads as an inscription.
+
+            anchorX="left" and the text runs off into -z, which is why every row
+            starts at the column's +z edge. maxWidth wraps a longer role onto a
+            second line rather than letting it run under the picture. */}
+        {portrait.caption && (
           <Text
-            position={[PORTRAIT_FACE_X + 0.03, PORTRAIT_PLATE_Y, 0]}
-            rotation={[0, Math.PI / 2, 0]}
-            fontSize={0.32}
-            letterSpacing={0.1}
-            maxWidth={PORTRAIT_FRAME_WIDTH - 0.8}
-            textAlign="center"
-            anchorX="center"
+            position={[layerX(6), NAME_Y, READOUT_START_Z]}
+            rotation={FACE_FRONT}
+            fontSize={NAME_SIZE}
+            letterSpacing={0.06}
+            maxWidth={READOUT_WIDTH}
+            textAlign="left"
+            anchorX="left"
             anchorY="middle"
-            color={t.signOutline}
+            color={t.panelText}
           >
             {portrait.caption}
           </Text>
+        )}
+        {portrait.role && (
           <Text
-            position={[-PORTRAIT_FACE_X - 0.03, PORTRAIT_FRAME_Y, 0]}
-            rotation={[0, -Math.PI / 2, 0]}
-            fontSize={0.4}
-            letterSpacing={0.12}
-            maxWidth={PORTRAIT_FRAME_WIDTH - 0.6}
-            textAlign="center"
-            lineHeight={1.4}
+            position={[layerX(6), ROLE_Y, READOUT_START_Z]}
+            rotation={FACE_FRONT}
+            fontSize={ROLE_SIZE}
+            letterSpacing={0.11}
+            lineHeight={1.35}
+            maxWidth={READOUT_WIDTH}
+            textAlign="left"
+            anchorX="left"
+            anchorY="middle"
+            color={t.panelAccent}
+          >
+            {portrait.role.toUpperCase()}
+          </Text>
+        )}
+        {portrait.status && (
+          <Text
+            position={[layerX(6), STATUS_Y, READOUT_START_Z - STATUS_INDENT]}
+            rotation={FACE_FRONT}
+            fontSize={STATUS_SIZE}
+            letterSpacing={0.06}
+            maxWidth={READOUT_WIDTH - STATUS_INDENT}
+            textAlign="left"
+            anchorX="left"
+            anchorY="middle"
+            color={t.panelMuted}
+          >
+            {portrait.status}
+          </Text>
+        )}
+
+        {/* The back. This is where the name used to be repeated in big outlined
+            letters on a slab, which is a headstone however you light it. It is
+            the stack instead — the thing you would actually want to read once
+            you have driven around to look. */}
+        <mesh position={[backLayerX(1), 0, 0]} rotation={FACE_BACK}>
+          <planeGeometry args={[SCREEN_HALF_WIDTH * 2, SCREEN_HALF_HEIGHT * 2]} />
+          <meshStandardMaterial
+            color={t.panelScreen}
+            emissive={t.panelAccent}
+            emissiveIntensity={lit ? 0.035 : 0.012}
+            roughness={0.7}
+          />
+        </mesh>
+        {chips.length > 0 && (
+          <Text
+            position={[backLayerX(3), STACK_HEADER_Y, 0]}
+            rotation={FACE_BACK}
+            fontSize={0.17}
+            letterSpacing={0.34}
             anchorX="center"
             anchorY="middle"
-            color={t.sign}
-            outlineWidth={0.01}
-            outlineColor={t.signOutline}
+            color={t.panelMuted}
           >
-            {portrait.caption}
+            STACK
           </Text>
-        </>
-      )}
+        )}
+        {chips.map((chip) => (
+          <group key={chip.label} position={[0, chip.y, chip.z]}>
+            <mesh position={[backLayerX(2), 0, 0]} rotation={FACE_BACK}>
+              <planeGeometry args={[chip.width, chip.height]} />
+              <meshStandardMaterial
+                color={t.panelShell}
+                emissive={t.panelAccent}
+                emissiveIntensity={lit ? 0.16 : 0.05}
+                roughness={0.5}
+              />
+            </mesh>
+            <Text
+              position={[backLayerX(3), 0, 0]}
+              rotation={FACE_BACK}
+              fontSize={CHIP_FONT}
+              letterSpacing={0.08}
+              anchorX="center"
+              anchorY="middle"
+              color={t.panelText}
+            >
+              {chip.label}
+            </Text>
+          </group>
+        ))}
+      </group>
+
     </group>
   );
 }
@@ -711,8 +1196,12 @@ type MuseumProps = {
   geometry?: MuseumGeometry;
   /** Colour overrides, merged over the defaults — pass only the ones you change. */
   theme?: Partial<MuseumTheme>;
-  /** Swap the exhibit forms; return the geometry element only. */
-  exhibitGeometry?: (i: number) => ReactNode;
+  /** Restock the pedestals. Called per case, with the case's index and which
+   *  plinth it stands on — `side` is passed so a set can be OFFSET between the
+   *  two walls: a cycle of four marks over six pedestals otherwise deals both
+   *  sides the identical hand, and a hall that looks photocopied down its middle
+   *  is worse than one with fewer shapes in it. */
+  exhibits?: (i: number, side: 1 | -1) => Exhibit;
   /** Whose museum this is — a framed picture on a plinth in the middle of the
    *  hall, which is the one thing in here you can collide with.
    *
@@ -754,7 +1243,7 @@ export function Museum({
   facing = 1,
   geometry = defaultMuseumGeometry,
   theme,
-  exhibitGeometry = defaultExhibitGeometry,
+  exhibits = defaultExhibits,
   portrait,
   gallery,
   lightIntensity,
@@ -958,40 +1447,68 @@ export function Museum({
 
       {/* Plinths down both side walls — the hall's real edges; the drivable
           floor stops exactly where they start. */}
-      {[-1, 1].map((side) => (
+      {([-1, 1] as const).map((side) => (
         <group key={`gallery${side}`} position={[0, 0, side * l.PLINTH_Z]}>
           <mesh position={[0, g.plinthHeight / 2, 0]} receiveShadow>
             <boxGeometry args={[l.INNER_X * 2, g.plinthHeight, g.plinthDepth]} />
             <meshStandardMaterial color={t.plinth} roughness={0.6} />
           </mesh>
 
-          {l.EXHIBIT_X.map((x, i) => (
-            <group key={x} position={[x, 0, 0]}>
-              {/* Pedestal */}
-              <mesh
-                position={[0, g.plinthHeight + PEDESTAL_HEIGHT / 2, 0]}
-                castShadow
-              >
-                <boxGeometry args={[1, PEDESTAL_HEIGHT, 1]} />
-                <meshStandardMaterial color={t.facade} roughness={0.7} />
-              </mesh>
+          {l.EXHIBIT_X.map((x, i) => {
+            const exhibit = exhibits(i, side);
 
-              {/* Exhibit — emissive, so each carries its own glow instead of
-                  needing a spotlight (one pointLight per case). */}
-              <mesh position={[0, l.PEDESTAL_TOP + 0.45, 0]} castShadow>
-                {exhibitGeometry(i)}
-                <meshStandardMaterial
-                  color={side > 0 ? t.exhibitRightColor : t.exhibitLeftColor}
-                  emissive={
-                    side > 0 ? t.exhibitRightEmissive : t.exhibitLeftEmissive
-                  }
-                  emissiveIntensity={lit ? 0.9 : 0.45}
-                  metalness={0.5}
-                  roughness={0.3}
-                />
-              </mesh>
-            </group>
-          ))}
+            return (
+              <group key={x} position={[x, 0, 0]}>
+                {/* Pedestal */}
+                <mesh
+                  position={[0, g.plinthHeight + PEDESTAL_HEIGHT / 2, 0]}
+                  castShadow
+                >
+                  <boxGeometry args={[1, PEDESTAL_HEIGHT, 1]} />
+                  <meshStandardMaterial color={t.facade} roughness={0.7} />
+                </mesh>
+
+                {/* Exhibit — emissive, so each carries its own glow instead of
+                    needing a spotlight (one pointLight per case).
+
+                    The seat and the facing live on the GROUP, so a multi-part
+                    mark's pieces stay registered to each other and each part's
+                    `offset` is read in the mark's own frame rather than in
+                    whichever direction this plinth happens to be turned.
+
+                    Turned to face the middle of the hall, which costs nothing for
+                    a solid but is the whole difference for a flat one: a logo cut
+                    from a plate is a sliver edge-on, and these plinths are looked
+                    at from the lane between them. The +z plinth takes the half
+                    turn because a flat geometry's face points +z to begin with. */}
+                <group
+                  position={[0, l.PEDESTAL_TOP + EXHIBIT_SEAT, 0]}
+                  rotation={[0, side > 0 ? Math.PI : 0, 0]}
+                >
+                  {exhibit.map((part, p) => (
+                    <mesh key={p} position={part.offset ?? [0, 0, 0]} castShadow>
+                      {part.geometry}
+                      <meshStandardMaterial
+                        color={
+                          part.color ??
+                          (side > 0 ? t.exhibitRightColor : t.exhibitLeftColor)
+                        }
+                        emissive={
+                          part.emissive ??
+                          (side > 0
+                            ? t.exhibitRightEmissive
+                            : t.exhibitLeftEmissive)
+                        }
+                        emissiveIntensity={lit ? 0.9 : 0.45}
+                        metalness={part.metalness ?? 0.5}
+                        roughness={part.roughness ?? 0.3}
+                      />
+                    </mesh>
+                  ))}
+                </group>
+              </group>
+            );
+          })}
         </group>
       ))}
 

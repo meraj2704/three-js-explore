@@ -11,6 +11,8 @@ import type { Group } from "three";
 import { Car } from "../components/Car";
 import { ChaseCamera } from "../components/ChaseCamera";
 import { Museum } from "../components/Museum";
+import type { MuseumPortrait } from "../components/Museum";
+import { mernExhibits } from "../components/mernExhibits";
 import { Road } from "../components/Road";
 import { SceneFog } from "../components/SceneFog";
 import { StreetLamps } from "../components/StreetLamps";
@@ -22,6 +24,8 @@ import {
   HALL_HALF_Z,
   MUSEUM_CENTER_X,
   MUSEUM_CENTER_Z,
+  PORTRAIT_HALF_DEPTH,
+  PORTRAIT_OFFSET_X,
   ROAD_SURFACE_Y,
   ROAD_WIDTH,
 } from "../components/worldGeometry";
@@ -31,6 +35,18 @@ const HALL_CAMERA_BOUNDS = {
   minX: MUSEUM_CENTER_X - HALL_HALF_DEPTH + 0.3,
   minZ: MUSEUM_CENTER_Z - HALL_HALF_Z + 0.3,
   maxZ: MUSEUM_CENTER_Z + HALL_HALF_Z - 0.3,
+};
+
+/** Kept in step with Scene.tsx by hand — this is a probe, not a second source of
+ *  truth. It exists so the centrepiece can be inspected from poses 7-9 without
+ *  driving the whole road. */
+const PORTRAIT: MuseumPortrait = {
+  src: "/mahfuz.jpeg",
+  caption: "MAHFUZ ISLAM",
+  role: "Full-stack Developer",
+  status: "Currently shipping",
+  tags: ["NEXT.JS", "NESTJS", "POSTGRES", "PRISMA", "REDIS", "DOCKER"],
+  aspect: 1,
 };
 
 const POSES: { position: [number, number, number]; rotation: [number, number, number] }[] = [
@@ -69,6 +85,65 @@ const POSES: { position: [number, number, number]; rotation: [number, number, nu
     ],
     rotation: [0, Math.PI, 0],
   },
+  // 7 — the approach to the display, from about where the doorway leaves you
+  {
+    position: [
+      MUSEUM_CENTER_X + PORTRAIT_OFFSET_X + 8,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z,
+    ],
+    rotation: [0, -Math.PI / 2, 0],
+  },
+  // 8 — pulled up at it, close enough to read the readout
+  {
+    position: [
+      MUSEUM_CENTER_X + PORTRAIT_OFFSET_X + 4.5,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z,
+    ],
+    rotation: [0, -Math.PI / 2, 0],
+  },
+  // 9 — driven round the back, where the stack chips are
+  {
+    position: [
+      MUSEUM_CENTER_X + PORTRAIT_OFFSET_X - 5.5,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z,
+    ],
+    rotation: [0, Math.PI / 2, 0],
+  },
+  // 10 — nose-on against the display's deck, at the exact x the kerb test stops
+  //      the car at: PORTRAIT_HALF_DEPTH + CAR_HALF_WIDTH out from the middle of
+  //      the exhibit. The margin is the car's WIDTH whichever way it is pointing,
+  //      so a car facing the deck reaches closest — this is the worst case for
+  //      bodywork clipping the deck, and the pose to check after any change to
+  //      how tall or how wide that deck is.
+  {
+    position: [
+      MUSEUM_CENTER_X + PORTRAIT_OFFSET_X + PORTRAIT_HALF_DEPTH + 0.89,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z,
+    ],
+    rotation: [0, -Math.PI / 2, 0],
+  },
+  // 11 — pulled up square to a pedestal on the +z plinth, to read one mark
+  {
+    position: [MUSEUM_CENTER_X - 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
+    rotation: [0, 0, 0],
+  },
+  // 12 — the same spot turned down the hall, so several marks line up at once
+  //      and the run reads as a sequence rather than as one ornament
+  {
+    position: [MUSEUM_CENTER_X - 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
+    rotation: [0, -Math.PI / 3, 0],
+  },
+  // 13 — square to the FIRST pedestal on the +z plinth, which the side offset
+  //      makes the React mark. The atom is the finest shape in the set and the
+  //      one that decides how heavy the others have to be drawn.
+  {
+    position: [MUSEUM_CENTER_X - 10.5, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
+    rotation: [0, 0, 0],
+  },
 ];
 
 export default function Probe() {
@@ -98,7 +173,13 @@ export default function Probe() {
           edgeLines={false}
         />
 
-        <Museum target={playerCar} lit={inMuseum} onOccupancyChange={setInMuseum} />
+        <Museum
+          target={playerCar}
+          portrait={PORTRAIT}
+          exhibits={mernExhibits}
+          lit={inMuseum}
+          onOccupancyChange={setInMuseum}
+        />
 
         <Car
           color="#ef4444"

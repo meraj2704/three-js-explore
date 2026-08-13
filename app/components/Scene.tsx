@@ -10,11 +10,13 @@ import { Gate } from "./Gate";
 import { JunctionApron } from "./JunctionApron";
 import { Museum, defaultMuseumGeometry } from "./Museum";
 import type {
+  Exhibit,
   GalleryItem,
   MuseumGeometry,
   MuseumPortrait,
   MuseumTheme,
 } from "./Museum";
+import { mernExhibits } from "./mernExhibits";
 import { Road } from "./Road";
 import { SceneFog } from "./SceneFog";
 import { StreetLamps } from "./StreetLamps";
@@ -117,18 +119,26 @@ const MERAJ_MUSEUM_THEME: Partial<MuseumTheme> = {
   light: "#dff0ff",
 };
 
-/** The face at the centre of the first hall. Module-level like everything else
- *  the museum memoises on, and `aspect` is the source file's, not the frame's:
- *  mahfuz.jpeg is a square 200×200 headshot, so 1 mats it correctly. Give it the
- *  wrong number here and the picture stretches rather than complains.
+/** The face at the centre of the first hall — shown on a working display rather
+ *  than in a frame, which is what the rest of these fields are for. `role` and
+ *  `status` are the two that matter: a portrait captioned with nothing but a name
+ *  reads as a memorial, and a present-tense line is what tells a visitor this is
+ *  somebody's profile and not somebody's plaque.
  *
- *  Its footprint is cut out of the drivable floor by MUSEUM_HAS_PORTRAIT in
- *  worldGeometry. The Meraj museum has no photo yet and no hole to match —
- *  drop one in public/, add the twin of this object, and flip
- *  RIGHT_MUSEUM_HAS_PORTRAIT alongside it. */
+ *  `aspect` is the SOURCE file's, not the display's: mahfuz.jpeg is a square
+ *  200×200 headshot, so 1 mats it correctly. Give it the wrong number here and
+ *  the picture stretches rather than complains.
+ *
+ *  Module-level like everything else the museum memoises on. Its footprint is cut
+ *  out of the drivable floor by MUSEUM_HAS_PORTRAIT in worldGeometry. The Meraj
+ *  museum has no photo yet and no hole to match — drop one in public/, add the
+ *  twin of this object, and flip RIGHT_MUSEUM_HAS_PORTRAIT alongside it. */
 const MAHFUZ_PORTRAIT: MuseumPortrait = {
   src: "/mahfuz.jpeg",
   caption: "MAHFUZ ISLAM",
+  role: "Full-stack Developer",
+  status: "Currently shipping",
+  tags: ["NEXT.JS", "NESTJS", "POSTGRES", "PRISMA", "REDIS", "DOCKER"],
   aspect: 1,
 };
 
@@ -154,15 +164,21 @@ const PROJECT_GALLERY: GalleryItem[] = [
 ];
 
 /** Its exhibits, so the second hall isn't the first one's stock in new colours.
+ *  Abstract, and colourless by design — they take the Meraj museum's own theme
+ *  pair, unlike the branded set standing along the project walls next door.
  *  Module-level so the reference is stable — the museum calls this per case. */
-const merajExhibitGeometry = (i: number) =>
-  i % 3 === 0 ? (
-    <coneGeometry args={[0.42, 0.95, 18]} />
-  ) : i % 3 === 1 ? (
-    <dodecahedronGeometry args={[0.45, 0]} />
-  ) : (
-    <capsuleGeometry args={[0.28, 0.4, 6, 14]} />
-  );
+const merajExhibits = (i: number): Exhibit => [
+  {
+    geometry:
+      i % 3 === 0 ? (
+        <coneGeometry args={[0.42, 0.95, 18]} />
+      ) : i % 3 === 1 ? (
+        <dodecahedronGeometry args={[0.45, 0]} />
+      ) : (
+        <capsuleGeometry args={[0.28, 0.4, 6, 14]} />
+      ),
+  },
+];
 
 /**
  * Root scene. <Canvas> creates the WebGL renderer, scene and camera,
@@ -266,6 +282,7 @@ export default function Scene() {
           name="Mahfuz Islam MUSEUM"
           portrait={MAHFUZ_PORTRAIT}
           gallery={PROJECT_GALLERY}
+          exhibits={mernExhibits}
           lit={inMuseum === "left"}
           onOccupancyChange={occupancy("left")}
         />
@@ -280,7 +297,7 @@ export default function Scene() {
           facing={-1}
           geometry={MERAJ_MUSEUM_GEOMETRY}
           theme={MERAJ_MUSEUM_THEME}
-          exhibitGeometry={merajExhibitGeometry}
+          exhibits={merajExhibits}
           lit={inMuseum === "meraj"}
           onOccupancyChange={occupancy("meraj")}
         />
