@@ -12,6 +12,7 @@ import { Car } from "../components/Car";
 import { ChaseCamera } from "../components/ChaseCamera";
 import { Museum } from "../components/Museum";
 import { Road } from "../components/Road";
+import { SceneFog } from "../components/SceneFog";
 import { StreetLamps } from "../components/StreetLamps";
 import {
   BRANCH_LENGTH,
@@ -40,13 +41,34 @@ const POSES: { position: [number, number, number]; rotation: [number, number, nu
   // 2 — on the threshold
   { position: [-56, ROAD_SURFACE_Y, 26], rotation: [0, -Math.PI / 2, 0] },
   // 3 — mid hall, turned broadside to test the camera clamp
-  { position: [-62, ROAD_SURFACE_Y, 26], rotation: [0, Math.PI, 0] },
-  // 4 — long approach down the branch, to check the sign is legible
-  { position: [-30, ROAD_SURFACE_Y, 26], rotation: [0, -Math.PI / 2, 0] },
-  // 5 — against the back wall facing out: the seat wants to be behind the wall
-  { position: [-66, ROAD_SURFACE_Y, 26], rotation: [0, Math.PI / 2, 0] },
+  {
+    position: [MUSEUM_CENTER_X, ROAD_SURFACE_Y, MUSEUM_CENTER_Z],
+    rotation: [0, Math.PI, 0],
+  },
+  // 4 — approach down the branch, to check the sign is legible. Pulled in from
+  //     -30: the chase camera looks slightly down, so the sign only enters the
+  //     frame inside ~13 units of the facade, and at -30 the fog had it anyway.
+  { position: [-38, ROAD_SURFACE_Y, 26], rotation: [0, -Math.PI / 2, 0] },
+  // 5 — against the back wall facing out: the seat wants to be behind the wall.
+  //     Read off the hall rather than typed, so resizing the museum doesn't
+  //     quietly leave these two poses parked in mid-room.
+  {
+    position: [
+      MUSEUM_CENTER_X - HALL_HALF_DEPTH + 2,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z,
+    ],
+    rotation: [0, Math.PI / 2, 0],
+  },
   // 6 — against the +z plinth facing away: the seat wants to be in the wall
-  { position: [-62, ROAD_SURFACE_Y, 32], rotation: [0, Math.PI, 0] },
+  {
+    position: [
+      MUSEUM_CENTER_X,
+      ROAD_SURFACE_Y,
+      MUSEUM_CENTER_Z + HALL_HALF_Z - 1.5,
+    ],
+    rotation: [0, Math.PI, 0],
+  },
 ];
 
 export default function Probe() {
@@ -62,7 +84,7 @@ export default function Probe() {
   return (
     <main className="h-screen w-full bg-zinc-950">
       <Canvas shadows camera={{ position: [4.5, 3, 9], fov: 45 }}>
-        <fog attach="fog" args={["#09090b", 8, 40]} />
+        <SceneFog indoors={inMuseum} />
         <ambientLight intensity={0.18} />
         <directionalLight position={[5, 6, 5]} color="#93c5fd" intensity={0.45} />
 

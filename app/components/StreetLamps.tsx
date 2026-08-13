@@ -13,6 +13,9 @@ import {
   FORECOURT_HALF_Z,
   MUSEUM_CENTER_Z,
   MUSEUM_FRONT_X,
+  RIGHT_BRANCH_Z,
+  RIGHT_MUSEUM_CENTER_Z,
+  RIGHT_MUSEUM_FRONT_X,
   ROAD_LENGTH,
   ROAD_SURFACE_Y,
   ROAD_WIDTH,
@@ -59,8 +62,28 @@ const LAMP_PLACEMENTS: LampPlacement[] = [
         number,
         number,
       ],
-      // Arms reach along z here, so the lamp must be yawed — see below.
-      reach: onNear ? -1.2 : 1.2,
+      // Arms reach along z here, so the lamp must be yawed — see below. That
+      // yaw also flips the sign: a quarter turn maps local +x onto world -z, so
+      // a lamp on the +z verge needs a POSITIVE reach to lean back over the
+      // road. Get it backwards and the head hangs out over the verge instead.
+      reach: onNear ? 1.2 : -1.2,
+    };
+  }),
+
+  // Right branch: the same walk, stepping out in +x from the other kerb. The
+  // near/far sides are read off its own centerline, so the stagger carries on
+  // across the junction rather than restarting.
+  ...Array.from({ length: Math.floor(BRANCH_LENGTH / LAMP_SPACING) }, (_, i) => {
+    const x = ROAD_WIDTH / 2 + LAMP_SPACING * (i + 0.5);
+    const onNear = i % 2 === 0;
+    const verge = BRANCH_WIDTH / 2 + 0.4;
+    return {
+      position: [
+        x,
+        ROAD_SURFACE_Y,
+        RIGHT_BRANCH_Z + (onNear ? verge : -verge),
+      ] as [number, number, number],
+      reach: onNear ? 1.2 : -1.2,
     };
   }),
 
@@ -77,10 +100,22 @@ const LAMP_PLACEMENTS: LampPlacement[] = [
     ] as [number, number, number],
     reach: side * 1.2,
   })),
+
+  // The Meraj Museum's forecourt, the same pair mirrored. Its forecourt runs out
+  // in +x from the branch, so the midpoint is measured back from the facade.
+  ...[-1, 1].map((side) => ({
+    position: [
+      RIGHT_MUSEUM_FRONT_X - FORECOURT_DEPTH / 2,
+      ROAD_SURFACE_Y,
+      RIGHT_MUSEUM_CENTER_Z + side * (FORECOURT_HALF_Z + 0.6),
+    ] as [number, number, number],
+    reach: side * 1.2,
+  })),
 ];
 
 /** Index of the first lamp that stands beside an east-west surface. Everything
- *  from here on — the branch and the forecourt — has to be yawed. */
+ *  from here on — both branches and both forecourts — has to be yawed, which is
+ *  why the main road's lamps have to stay first in the list. */
 const FIRST_YAWED_LAMP = Math.floor(ROAD_LENGTH / LAMP_SPACING);
 
 /** How many lamps around the car actually get a pointLight.

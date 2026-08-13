@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useRef, useState } from "react";
 import type { RefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { ColorRepresentation, Group } from "three";
@@ -26,10 +26,6 @@ type CarProps = {
   maxSpeed?: number;
   /** Lets a parent (e.g. the chase camera) read this car's live transform. */
   bodyRef?: RefObject<Group | null>;
-  /** Called the moment the car leaves the asphalt. */
-  onCrash?: () => void;
-  /** True once crashed — freezes the controls until the scene resets. */
-  crashed?: boolean;
 };
 
 /** Driving feel, all in units (or radians) per second. */
@@ -46,13 +42,9 @@ const WHEEL_RADIUS = 0.32;
 const WHEEL_TRACK = 0.78;
 const WHEEL_BASE = 1.0;
 
-/** Half the car's width. The crash test uses the outer edge of the tyres, not
+/** Half the car's width. The kerb test uses the outer edge of the tyres, not
  *  the group origin, so a wheel hanging over the verge already counts. */
 const CAR_HALF_WIDTH = WHEEL_TRACK + 0.11;
-
-/** How fast a crashed car tips over, and how far it goes before stopping. */
-const ROLL_RATE = 2.2;
-const MAX_ROLL = Math.PI / 5;
 
 export function Car({
   color = "#ef4444",
@@ -62,8 +54,6 @@ export function Car({
   controllable = false,
   maxSpeed = CAR_MAX_SPEED,
   bodyRef,
-  onCrash,
-  crashed = false,
 }: CarProps) {
   // Handle on the whole car. Grabbing the <group> rather than any single mesh
   // means body, cabin, wheels and lights all move together.
@@ -83,38 +73,12 @@ export function Car({
   // re-rendering. Starts at the `speed` prop so uncontrolled cars still cruise.
   const velocity = useRef(speed);
 
-  // Latched separately from the `crashed` prop: setState is async, so without
-  // this the frame loop would fire onCrash again on every frame until the
-  // parent's re-render lands.
-  const hasCrashed = useRef(false);
-
-  // The parent clearing `crashed` is the signal to put the car back on the road.
-  useEffect(() => {
-    if (crashed || !hasCrashed.current) return;
-    const car = groupRef.current;
-    if (!car) return;
-
-    car.position.set(...startPosition);
-    car.rotation.set(...startRotation);
-    velocity.current = 0;
-    hasCrashed.current = false;
-  }, [crashed, groupRef, startPosition, startRotation]);
-
   // translateZ moves along the car's OWN forward axis, so steering just changes
   // rotation.y and the car follows wherever its nose points.
   // From here on the `position` prop is only the starting point — useFrame owns it.
   useFrame((_state, delta) => {
     const car = groupRef.current;
     if (!car) return;
-
-    // Wreck animation: drop through the road surface and tip over, then stop.
-    if (hasCrashed.current) {
-      if (car.rotation.z < MAX_ROLL) {
-        car.rotation.z = Math.min(MAX_ROLL, car.rotation.z + ROLL_RATE * delta);
-        car.position.y -= delta * 0.8;
-      }
-      return;
-    }
 
     if (controllable) {
       const { forward, back, left, right } = controls.current;
@@ -149,21 +113,41 @@ export function Car({
       }
     }
 
-    if (velocity.current !== 0) {
-      car.translateZ(delta * velocity.current);
+    if (velocity.current === 0) return;
+
+    const fromX = car.position.x;
+    const fromZ = car.position.z;
+    car.translateZ(delta * velocity.current);
+
+    // The kerb is solid: a move that would end off the asphalt is undone rather
+    // than allowed. Tested after the move so the check reads the pose the car
+    // would actually hold, against the union of both roads — cutting the corner
+    // at the junction stays legal. CAR_HALF_WIDTH is the outer edge of the
+    // tyres, not the center, so a wheel over the verge is already too far.
+    if (
+      !controllable ||
+      isOnPavement(car.position.x, car.position.z, CAR_HALF_WIDTH)
+    ) {
+      return;
     }
 
-    // Crash test, after the move so we catch the frame it goes over the edge.
-    // Uses the union of both roads, so cutting the corner at the junction is
-    // allowed. CAR_HALF_WIDTH is the outer edge of the tyres, not the center,
-    // so a wheel hanging over the verge already counts.
-    if (
-      controllable &&
-      !isOnPavement(car.position.x, car.position.z, CAR_HALF_WIDTH)
-    ) {
-      hasCrashed.current = true;
+    // Blocked. Retry the move one axis at a time and keep whichever half still
+    // lands on asphalt, so a car meeting the kerb at an angle scrapes along it
+    // instead of stopping dead — undoing the whole move would pin it to the edge
+    // and force a reverse out of every glancing touch.
+    const toX = car.position.x;
+    const toZ = car.position.z;
+
+    if (isOnPavement(toX, fromZ, CAR_HALF_WIDTH)) {
+      car.position.z = fromZ;
+    } else if (isOnPavement(fromX, toZ, CAR_HALF_WIDTH)) {
+      car.position.x = fromX;
+    } else {
+      // Square-on into a wall, or into a corner. Nothing survives, so the car
+      // stops where it stood and the driver has to back out.
+      car.position.x = fromX;
+      car.position.z = fromZ;
       velocity.current = 0;
-      onCrash?.();
     }
   });
 

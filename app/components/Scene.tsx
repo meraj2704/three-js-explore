@@ -6,11 +6,17 @@ import type { Group } from "three";
 
 import { Car } from "./Car";
 import { ChaseCamera } from "./ChaseCamera";
-import { CrashOverlay } from "./CrashOverlay";
 import { Gate } from "./Gate";
 import { JunctionApron } from "./JunctionApron";
-import { Museum } from "./Museum";
+import { Museum, defaultMuseumGeometry } from "./Museum";
+import type {
+  GalleryItem,
+  MuseumGeometry,
+  MuseumPortrait,
+  MuseumTheme,
+} from "./Museum";
 import { Road } from "./Road";
+import { SceneFog } from "./SceneFog";
 import { StreetLamps } from "./StreetLamps";
 import {
   BRANCH_LENGTH,
@@ -20,6 +26,13 @@ import {
   HALL_HALF_Z,
   MUSEUM_CENTER_X,
   MUSEUM_CENTER_Z,
+  RIGHT_APRON_FAR_X,
+  RIGHT_APRON_NEAR_X,
+  RIGHT_BRANCH_Z,
+  RIGHT_MUSEUM_CENTER_X,
+  RIGHT_MUSEUM_CENTER_Z,
+  RIGHT_MUSEUM_GROUNDS_ENTER_X,
+  RIGHT_MUSEUM_GROUNDS_EXIT_X,
   ROAD_START_Z,
   ROAD_SURFACE_Y,
   ROAD_WIDTH,
@@ -36,19 +49,120 @@ import {
  *  sitting inside it. */
 const INDOOR_CHASE_OFFSET: [number, number, number] = [0, 2.5, -4.8];
 
+/** Which museum the car is inside. A single value, not a flag per building: the
+ *  camera has to know WHICH hall to fence itself into, and a pair of booleans
+ *  could contradict each other. */
+type MuseumId = "left" | "meraj";
+
 /** Walls the indoor seat may not cross: the hall floor, inset a little.
  *
  *  The floor and not the room, even though the room is bigger and the extra
  *  travel would help in the corners. Beyond the floor are the plinths, and a
  *  seat allowed over one ends up inside a display case — which looks far worse
- *  than a close camera does. The facade is left unfenced on purpose, since
- *  clamping +x would shove the camera past the car on the way in. Defined out
- *  here so the object identity is stable across renders. */
-const HALL_CAMERA_BOUNDS = {
-  minX: MUSEUM_CENTER_X - HALL_HALF_DEPTH + 0.3,
-  minZ: MUSEUM_CENTER_Z - HALL_HALF_Z + 0.3,
-  maxZ: MUSEUM_CENTER_Z + HALL_HALF_Z - 0.3,
+ *  than a close camera does. The wall with the doorway in it is left unfenced on
+ *  purpose, since clamping the way the car came in would shove the camera past
+ *  it on the threshold — which is why the two entries below fence opposite ends
+ *  of x: these buildings face each other. Defined out here so each entry's
+ *  object identity is stable across renders. */
+const HALL_CAMERA_BOUNDS: Record<
+  MuseumId,
+  { minX?: number; maxX?: number; minZ: number; maxZ: number }
+> = {
+  left: {
+    minX: MUSEUM_CENTER_X - HALL_HALF_DEPTH + 0.3,
+    minZ: MUSEUM_CENTER_Z - HALL_HALF_Z + 0.3,
+    maxZ: MUSEUM_CENTER_Z + HALL_HALF_Z - 0.3,
+  },
+  meraj: {
+    maxX: RIGHT_MUSEUM_CENTER_X + HALL_HALF_DEPTH - 0.3,
+    minZ: RIGHT_MUSEUM_CENTER_Z - HALL_HALF_Z + 0.3,
+    maxZ: RIGHT_MUSEUM_CENTER_Z + HALL_HALF_Z - 0.3,
+  },
 };
+
+/** The Meraj Museum's placement. Everything else — depth, height, door, plinths,
+ *  forecourt — is spread in from the defaults, so the two buildings can only
+ *  differ where this object says they do, and isOnPavement's mirrored tests keep
+ *  reading the same shared constants.
+ *
+ *  Module-level for identity, not tidiness: <Museum> memoises its entire derived
+ *  layout on this object, and an inline literal would rebuild it every render. */
+const MERAJ_MUSEUM_GEOMETRY: MuseumGeometry = {
+  ...defaultMuseumGeometry,
+  centerX: RIGHT_MUSEUM_CENTER_X,
+  centerZ: RIGHT_MUSEUM_CENTER_Z,
+  groundsEnterX: RIGHT_MUSEUM_GROUNDS_ENTER_X,
+  groundsExitX: RIGHT_MUSEUM_GROUNDS_EXIT_X,
+};
+
+/** Cooler stone and teal light, against the first museum's warm sandstone. Two
+ *  identical buildings at the ends of two identical branches would leave a
+ *  driver unsure which one they had arrived at; the skin is what tells them. */
+const MERAJ_MUSEUM_THEME: Partial<MuseumTheme> = {
+  base: "#4b5563",
+  forecourt: "#3f454e",
+  wall: "#c4cdd8",
+  facade: "#dde4ec",
+  cornice: "#8c98a8",
+  column: "#eef3f8",
+  plinth: "#3f4653",
+  sign: "#5eead4",
+  signOutline: "#042f2e",
+  exhibitLeftColor: "#fde68a",
+  exhibitLeftEmissive: "#f59e0b",
+  exhibitRightColor: "#c4b5fd",
+  exhibitRightEmissive: "#8b5cf6",
+  artworkPanel: "#134e4a",
+  artworkPanelEmissive: "#0d9488",
+  light: "#dff0ff",
+};
+
+/** The face at the centre of the first hall. Module-level like everything else
+ *  the museum memoises on, and `aspect` is the source file's, not the frame's:
+ *  mahfuz.jpeg is a square 200×200 headshot, so 1 mats it correctly. Give it the
+ *  wrong number here and the picture stretches rather than complains.
+ *
+ *  Its footprint is cut out of the drivable floor by MUSEUM_HAS_PORTRAIT in
+ *  worldGeometry. The Meraj museum has no photo yet and no hole to match —
+ *  drop one in public/, add the twin of this object, and flip
+ *  RIGHT_MUSEUM_HAS_PORTRAIT alongside it. */
+const MAHFUZ_PORTRAIT: MuseumPortrait = {
+  src: "/mahfuz.jpeg",
+  caption: "MAHFUZ ISLAM",
+  aspect: 1,
+};
+
+/** The project wall. Hung but not yet filled: every slot below is a mounted
+ *  empty frame with its caption, because that is what a gallery looks like
+ *  before the prints arrive — and it beats an empty wall for showing that the
+ *  rail is working.
+ *
+ *  To fill one, add `src` (and the file's real `aspect`, or it stretches):
+ *
+ *      { src: "/projects/foo.png", caption: "FOO", aspect: 16 / 9 }
+ *
+ *  Add or remove entries freely — they space themselves along the hall and
+ *  alternate walls. Module-level because <Museum> memoises the wall layout on
+ *  this array's identity. */
+const PROJECT_GALLERY: GalleryItem[] = [
+  { caption: "PROJECT 01" },
+  { caption: "PROJECT 02" },
+  { caption: "PROJECT 03" },
+  { caption: "PROJECT 04" },
+  { caption: "PROJECT 05" },
+  { caption: "PROJECT 06" },
+];
+
+/** Its exhibits, so the second hall isn't the first one's stock in new colours.
+ *  Module-level so the reference is stable — the museum calls this per case. */
+const merajExhibitGeometry = (i: number) =>
+  i % 3 === 0 ? (
+    <coneGeometry args={[0.42, 0.95, 18]} />
+  ) : i % 3 === 1 ? (
+    <dodecahedronGeometry args={[0.45, 0]} />
+  ) : (
+    <capsuleGeometry args={[0.28, 0.4, 6, 14]} />
+  );
 
 /**
  * Root scene. <Canvas> creates the WebGL renderer, scene and camera,
@@ -61,21 +175,31 @@ export default function Scene() {
   // Lives here so both the car and the chase camera can reach it.
   const playerCar = useRef<Group>(null);
 
-  // Crash state IS worth putting in React state, unlike per-frame values —
-  // it changes rarely and drives the HTML overlay.
-  const [crashed, setCrashed] = useState(false);
+  // Worth putting in React state, unlike per-frame values: this changes twice a
+  // visit, not sixty times a second. Each museum decides its own occupancy —
+  // see <Museum> — and both the camera and that hall's lights hang off it.
+  const [inMuseum, setInMuseum] = useState<MuseumId | null>(null);
 
-  // Same reasoning: this flips twice a visit, not sixty times a second. The
-  // museum decides it — see <Museum> — and both the camera and the hall lights
-  // hang off the answer.
-  const [inMuseum, setInMuseum] = useState(false);
+  // Written from a museum's own report, so it can only ever name the building
+  // that reported. The functional update is what makes that safe: a museum
+  // clearing itself must not clear a different one that has since claimed the
+  // car — the two are 120 units apart, but the ordering shouldn't be load-bearing.
+  const occupancy = (id: MuseumId) => (occupied: boolean) =>
+    setInMuseum((current) => (occupied ? id : current === id ? null : current));
 
   return (
-    <div className="relative h-full w-full">
+    /* The cursor is the drag's only advertisement, and `cursor` inherits — so
+       the canvas inside picks it up, and :active on this wrapper covers the
+       whole press. touch-action has to be set on the canvas ITSELF (it doesn't
+       inherit) or a finger drag scrolls the page instead of turning the view;
+       R3F doesn't set it for us. */
+    <div className="relative h-full w-full cursor-grab active:cursor-grabbing [&_canvas]:touch-none">
       <Canvas shadows camera={{ position: [4.5, 3, 9], fov: 45 }}>
-        {/* Matches the page's bg-zinc-950 so the far end of the road dissolves
-            into the background instead of stopping dead in mid-air. */}
-        <fog attach="fog" args={["#09090b", 8, 40]} />
+        {/* Dissolves the far end of the road into the page background — and
+            lifts once the car is on museum grounds, because a hall is deeper
+            than the road's fog can see. Either museum counts; they are 150 units
+            apart, so only one of them is ever anywhere near the camera. */}
+        <SceneFog indoors={inMuseum !== null} />
 
         {/* Dim ambient + a weak, cool directional stand in for moonlight. Both
             are kept low on purpose: the lamps can only read as the light source
@@ -114,12 +238,22 @@ export default function Scene() {
           edgeLines={false}
         />
 
+        {/* Right branch, mirroring the left. Its z comes from worldGeometry
+            rather than being spelled out here, because isOnPavement has to
+            agree with it exactly — a road you can see but not drive on is
+            worse than no road at all. Ends at the Meraj Museum, below. */}
         <Road
           length={BRANCH_LENGTH}
           width={BRANCH_WIDTH}
-          position={[ROAD_WIDTH / 2 + BRANCH_LENGTH  / 2, -1.5, BRANCH_Z - 17]}
+          position={[ROAD_WIDTH / 2 + BRANCH_LENGTH / 2, -1.5, RIGHT_BRANCH_Z]}
           rotation={[0, Math.PI / 2, 0]}
           edgeLines={false}
+        />
+
+        <JunctionApron
+          nearX={RIGHT_APRON_NEAR_X}
+          farX={RIGHT_APRON_FAR_X}
+          centerZ={RIGHT_BRANCH_Z}
         />
 
         {/* Closes off the branch, and you can drive in through the doors. It
@@ -129,8 +263,26 @@ export default function Scene() {
             brings the hall lights up and moves the camera indoors. */}
         <Museum
           target={playerCar}
-          lit={inMuseum}
-          onOccupancyChange={setInMuseum}
+          name="Mahfuz Islam MUSEUM"
+          portrait={MAHFUZ_PORTRAIT}
+          gallery={PROJECT_GALLERY}
+          lit={inMuseum === "left"}
+          onOccupancyChange={occupancy("left")}
+        />
+
+        {/* The same building at the end of the right-hand branch, turned to face
+            the road it serves. Only its placement, skin and stock differ — the
+            footprint is the first museum's, which is why isOnPavement can mirror
+            one set of tests instead of carrying a second set of dimensions. */}
+        <Museum
+          target={playerCar}
+          name="MERAJ MUSEUM"
+          facing={-1}
+          geometry={MERAJ_MUSEUM_GEOMETRY}
+          theme={MERAJ_MUSEUM_THEME}
+          exhibitGeometry={merajExhibitGeometry}
+          lit={inMuseum === "meraj"}
+          onOccupancyChange={occupancy("meraj")}
         />
 
         {/* Entrance arch, a few units down-road from the start line so the car
@@ -140,32 +292,40 @@ export default function Scene() {
         {/* Drivable: arrow keys or WASD. Starts parked, yawed 180° so it faces
             away from the camera and drives up the road rather than off-screen.
             Centered on x so there's equal room to drift either way before the
-            crash bounds bite. */}
+            kerb stops it. */}
         <Car
           color="#ef4444"
           position={[0, ROAD_SURFACE_Y, ROAD_START_Z]}
           rotation={[0, Math.PI, 0]}
           controllable
           bodyRef={playerCar}
-          crashed={crashed}
-          onCrash={() => setCrashed(true)}
         />
 
-        {/* Rides behind the car. Must come after <Car> so the car's transform
-            for this frame is already up to date when the camera reads it.
-            Indoors it takes a tighter seat and stays inside the hall's walls;
-            outdoors both are left at their defaults. */}
+        {/* Rides behind the car, and swings around it when the canvas is
+            dragged — which is the only way to see a wall you are not driving
+            at. Must come after <Car> so the car's transform for this frame is
+            already up to date when the camera reads it. Indoors it takes a
+            tighter seat and stays inside the hall's walls; outdoors both are
+            left at their defaults. */}
         <ChaseCamera
           target={playerCar}
           offset={inMuseum ? INDOOR_CHASE_OFFSET : undefined}
-          bounds={inMuseum ? HALL_CAMERA_BOUNDS : undefined}
+          bounds={inMuseum ? HALL_CAMERA_BOUNDS[inMuseum] : undefined}
         />
 
         {/* No <OrbitControls>: it writes camera.position and camera.quaternion
-            every frame, which would fight the chase camera for control. */}
+            every frame, which would fight the chase camera for control. The
+            drag-to-look above is the chase camera's own, applied to its seat. */}
       </Canvas>
 
-      {crashed && <CrashOverlay onReset={() => setCrashed(false)} />}
+      {/* The controls, because neither of them announces itself — and a museum
+          you can only see the far end of is what you get when nobody finds the
+          second one. pointer-events-none so it can sit over the canvas without
+          swallowing the drag it is advertising. */}
+      <div className="pointer-events-none absolute bottom-5 left-5 select-none text-[11px] leading-5 tracking-widest text-zinc-500 uppercase">
+        <p>Arrows / WASD to drive</p>
+        <p>Drag to look around · drive to recentre</p>
+      </div>
     </div>
   );
 }
