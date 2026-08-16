@@ -98,26 +98,34 @@ const MERAJ_MUSEUM_GEOMETRY: MuseumGeometry = {
   groundsExitX: RIGHT_MUSEUM_GROUNDS_EXIT_X,
 };
 
-/** Cooler stone and teal light, against the first museum's warm sandstone. Two
- *  identical buildings at the ends of two identical branches would leave a
- *  driver unsure which one they had arrived at; the skin is what tells them. */
+/** The same laboratory, wired violet.
+ *
+ *  Two identical buildings at the ends of two identical branches would leave a
+ *  driver unsure which one they had arrived at, so one of them has to differ —
+ *  and when both are near-black, the ONLY thing left to differ in is the light.
+ *  That is why every override below is an emissive colour and not one structural
+ *  grey: the walls, floors and metal are shared deliberately, so the two halls
+ *  read as one building programme with two installations in it rather than as two
+ *  unrelated buildings.
+ *
+ *  It swaps the palette's two accents rather than introducing a third hue. The
+ *  brief allows purple in small amounts; this is the room where the small amount
+ *  is the main one, and cyan becomes the trim. */
 const MERAJ_MUSEUM_THEME: Partial<MuseumTheme> = {
-  base: "#4b5563",
-  forecourt: "#3f454e",
-  wall: "#c4cdd8",
-  facade: "#dde4ec",
-  cornice: "#8c98a8",
-  column: "#eef3f8",
-  plinth: "#3f4653",
-  sign: "#5eead4",
-  signOutline: "#042f2e",
-  exhibitLeftColor: "#fde68a",
-  exhibitLeftEmissive: "#f59e0b",
-  exhibitRightColor: "#c4b5fd",
-  exhibitRightEmissive: "#8b5cf6",
-  artworkPanel: "#134e4a",
-  artworkPanelEmissive: "#0d9488",
-  light: "#dff0ff",
+  accent: "#a78bfa",
+  accentAlt: "#22d3ee",
+  holo: "#8b5cf6",
+  stripEmissive: "#a78bfa",
+  strip: "#ece6ff",
+  sign: "#c4b5fd",
+  signOutline: "#2e1065",
+  exhibitLeftColor: "#ddd6fe",
+  exhibitLeftEmissive: "#6d28d9",
+  exhibitRightColor: "#a5f3fc",
+  exhibitRightEmissive: "#0e7490",
+  artworkPanelEmissive: "#5b21b6",
+  panelAccent: "#a78bfa",
+  light: "#c9c0ff",
 };
 
 /** The face at the centre of the first hall — shown on a working display rather
@@ -134,13 +142,153 @@ const MERAJ_MUSEUM_THEME: Partial<MuseumTheme> = {
  *  out of the drivable floor by MUSEUM_HAS_PORTRAIT in worldGeometry. The Meraj
  *  museum has no photo yet and no hole to match — drop one in public/, add the
  *  twin of this object, and flip RIGHT_MUSEUM_HAS_PORTRAIT alongside it. */
-const MAHFUZ_PORTRAIT: MuseumPortrait = {
+export const MAHFUZ_PORTRAIT: MuseumPortrait = {
   src: "/mahfuz.jpeg",
   caption: "MAHFUZ ISLAM",
-  role: "Full-stack Developer",
+  role: "FULL-STACK DEVELOPER",
   status: "Currently shipping",
   tags: ["NEXT.JS", "NESTJS", "POSTGRES", "PRISMA", "REDIS", "DOCKER"],
   aspect: 1,
+
+  /* Everything below is what the back wall's monitor shows. It is all data —
+   * the monitor owns every decision about where a number goes and how big it
+   * is, and this object owns nothing but what the numbers ARE. Which is the
+   * point: rewriting a CV should never mean touching a layout. */
+  about:
+    "Full-stack developer building modern, scalable, high-performance web applications end to end.",
+  availability: "AVAILABLE FOR NEW OPPORTUNITIES",
+  stats: [
+    { value: "5+", label: "YEARS EXPERIENCE" },
+    { value: "30+", label: "PROJECTS COMPLETED" },
+    { value: "10+", label: "HAPPY CLIENTS" },
+  ],
+  /* Seven, and seven is deliberate: the monitor deals these four across then
+   * three, so six would leave an even grid with nothing to look at and eight
+   * would need a third row it does not have the height for. */
+  tech: [
+    "NEXT.JS",
+    "REACT",
+    "TYPESCRIPT",
+    "NODE.JS",
+    "MONGODB",
+    "REDUX",
+    "TAILWIND",
+  ],
+  skills: [
+    { label: "FRONTEND DEVELOPMENT", level: 95 },
+    { label: "BACKEND DEVELOPMENT", level: 90 },
+    { label: "UI/UX DESIGN", level: 80 },
+    { label: "DATABASE MANAGEMENT", level: 85 },
+    { label: "DEVOPS & DEPLOYMENT", level: 75 },
+  ],
+  achievements: [
+    { value: "30+", label: "PROJECTS", icon: "project" },
+    { value: "20+", label: "CLIENTS", icon: "client" },
+    { value: "10+", label: "TECHNOLOGIES", icon: "tech" },
+    { value: "5+", label: "AWARDS", icon: "award" },
+  ],
+  focus: {
+    text: "Building scalable web applications with modern technologies",
+    progress: 0.85,
+  },
+
+  /* ---------------------------------------------------------------- *
+   * And what each of those panels opens onto.
+   * ---------------------------------------------------------------- *
+   * Everything above is a SUMMARY, read from a car at the far end of the hall.
+   * Everything below is only ever seen after somebody has walked up and clicked
+   * something, which is why it is allowed to be longer, and why it is separate
+   * fields rather than longer versions of the ones above: a detail view that
+   * shows the same eight words at twice the size is a zoom, not a mode.
+   */
+  philosophy:
+    "Ship small, measure everything, and keep the boring parts boring. Most of what makes an application fast is a decision taken before any of it is written.",
+  timeline: [
+    { year: "2020", label: "First production work" },
+    { year: "2022", label: "Full-stack, end to end" },
+    { year: "2023", label: "Leading delivery" },
+    { year: "2025", label: "Systems and scale" },
+  ],
+  /* Grouped for the TECH STACK graph. The groups ARE the argument that view
+   * makes — a stack is not seven logos, it is four concerns wired together. */
+  techGroups: [
+    { label: "FRONTEND", items: ["NEXT.JS", "REACT", "REDUX", "TAILWIND"] },
+    { label: "LANGUAGE", items: ["TYPESCRIPT"] },
+    { label: "BACKEND", items: ["NODE.JS", "REST", "AUTH"] },
+    { label: "DATA", items: ["MONGODB", "CACHING"] },
+  ],
+  milestones: [
+    { year: "2021", label: "First client shipped" },
+    { year: "2022", label: "10 projects" },
+    { year: "2024", label: "20 clients" },
+    { year: "2025", label: "30 projects" },
+  ],
+  learning: ["RUST", "EDGE RUNTIMES", "OBSERVABILITY"],
+
+  /* Placeholder work, in the same spirit as the empty frames on the side walls:
+   * the rail is real and wired, the prints have not arrived. Replace these with
+   * actual projects — every field is optional, so a half-filled entry renders
+   * as a half-filled case study rather than as a hole. */
+  projects: [
+    {
+      name: "COMMERCE PLATFORM",
+      summary:
+        "A storefront and admin system handling catalogue, checkout and fulfilment for a multi-region retailer.",
+      tech: ["NEXT.JS", "NODE.JS", "MONGODB", "REDUX"],
+      architecture:
+        "Server-rendered storefront over a REST core, with the catalogue read model kept warm in cache and writes routed through a single ordering service.",
+      challenge:
+        "Checkout stalled under campaign traffic because every page read priced the basket from source.",
+      solution:
+        "Moved pricing to a precomputed read model invalidated on write; p95 checkout fell from seconds to well under one.",
+      features: [
+        "Multi-region catalogue",
+        "Server-rendered product pages",
+        "Role-based admin",
+        "Order and fulfilment tracking",
+      ],
+      demo: "example.com",
+      repo: "github.com/example",
+      stats: [
+        { value: "98", label: "LIGHTHOUSE" },
+        { value: "92", label: "TEST COVERAGE" },
+      ],
+    },
+    {
+      name: "ANALYTICS DASHBOARD",
+      summary:
+        "A realtime operations dashboard aggregating event streams into a small number of readable indicators.",
+      tech: ["REACT", "TYPESCRIPT", "NODE.JS"],
+      architecture:
+        "A streaming aggregator writing rolling windows, and a thin client that only ever reads the windows.",
+      challenge:
+        "The first build queried raw events per widget and fell over at a few thousand events a minute.",
+      solution:
+        "Pushed aggregation upstream of the client entirely; the browser now reads fixed-size summaries at any volume.",
+      features: ["Realtime rollups", "Custom indicators", "Historic replay"],
+      demo: "example.com",
+      repo: "github.com/example",
+      stats: [
+        { value: "60", label: "FRAME RATE" },
+        { value: "88", label: "TEST COVERAGE" },
+      ],
+    },
+    {
+      name: "TEAM WORKSPACE",
+      summary:
+        "Shared documents, tasks and presence for distributed teams, with conflict-free concurrent editing.",
+      tech: ["NEXT.JS", "TYPESCRIPT", "MONGODB", "TAILWIND"],
+      architecture:
+        "Documents held as ordered operations, merged on the server and broadcast to connected clients.",
+      challenge: "Concurrent edits produced divergent documents across clients.",
+      solution:
+        "Replaced last-write-wins with an operation log and deterministic merge; divergence became structurally impossible.",
+      features: ["Live presence", "Offline edits", "Granular permissions"],
+      demo: "example.com",
+      repo: "github.com/example",
+      stats: [{ value: "95", label: "UPTIME" }],
+    },
+  ],
 };
 
 /** The project wall. Hung but not yet filled: every slot below is a mounted
@@ -316,9 +464,11 @@ export default function Scene() {
         {/* Drivable: arrow keys or WASD. Starts parked, yawed 180° so it faces
             away from the camera and drives up the road rather than off-screen.
             Centered on x so there's equal room to drift either way before the
-            kerb stops it. */}
+            kerb stops it. Takes its own graphite paint rather than being handed
+            a colour: the body is a metallic clearcoat lit almost entirely by
+            its own reflections, and a flat hue passed in from out here would
+            fight that instead of tinting it. */}
         <Car
-          color="#ef4444"
           position={[0, ROAD_SURFACE_Y, ROAD_START_Z]}
           rotation={[0, Math.PI, 0]}
           controllable

@@ -11,7 +11,7 @@ import type { Group } from "three";
 import { Car } from "../components/Car";
 import { ChaseCamera } from "../components/ChaseCamera";
 import { Museum } from "../components/Museum";
-import type { MuseumPortrait } from "../components/Museum";
+import { MAHFUZ_PORTRAIT } from "../components/Scene";
 import { stackExhibits } from "../components/stackExhibits";
 import { Road } from "../components/Road";
 import { SceneFog } from "../components/SceneFog";
@@ -37,17 +37,12 @@ const HALL_CAMERA_BOUNDS = {
   maxZ: MUSEUM_CENTER_Z + HALL_HALF_Z - 0.3,
 };
 
-/** Kept in step with Scene.tsx by hand — this is a probe, not a second source of
- *  truth. It exists so the centrepiece can be inspected from poses 7-9 without
- *  driving the whole road. */
-const PORTRAIT: MuseumPortrait = {
-  src: "/mahfuz.jpeg",
-  caption: "MAHFUZ ISLAM",
-  role: "Full-stack Developer",
-  status: "Currently shipping",
-  tags: ["NEXT.JS", "NESTJS", "POSTGRES", "PRISMA", "REDIS", "DOCKER"],
-  aspect: 1,
-};
+/** Imported from Scene rather than copied. It used to be a hand-kept duplicate
+ *  with a note admitting as much, which was survivable while it was a name and a
+ *  photo — it stopped being survivable when the same object started driving an
+ *  entire wall-mounted display. A probe that shows a DIFFERENT portfolio to the
+ *  one the app ships is worse than no probe. */
+const PORTRAIT = MAHFUZ_PORTRAIT;
 
 const POSES: { position: [number, number, number]; rotation: [number, number, number] }[] = [
   // 0 — on the branch, still short of the forecourt
@@ -138,20 +133,22 @@ const POSES: { position: [number, number, number]; rotation: [number, number, nu
     rotation: [0, -Math.PI / 3, 0],
   },
   // 13 — square to the FIRST pedestal on the +z plinth. The side offset makes it
-  //      the Node mark now that the set is seven; it used to be React, which is
-  //      still the finest shape in the set and still the one that decides how
-  //      heavy the others have to be drawn — see pose 17.
+  //      the Next mark now that the set is eight and the offset is half of it;
+  //      it used to be React, which is still the finest shape in the set and
+  //      still the one that decides how heavy the others have to be drawn — see
+  //      pose 17.
   {
     position: [MUSEUM_CENTER_X - 10.5, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
     rotation: [0, 0, 0],
   },
   // 14-16 — square to the second, third and fourth pedestals of that plinth,
-  //      which the offset makes Next, Nest and PostgreSQL. Pedestals are
-  //      EXHIBIT_SPACING apart, hence the 4.2 steps. These are the three marks
-  //      drawn from shapes rather than from primitives, so they are the ones to
-  //      look at after any change to how a mark is cut: the N has to stay inside
-  //      its disc, the ribbon has to read as a band and not a triangle, and the
-  //      elephant has to keep both of its waists.
+  //      which the offset makes Nest, PostgreSQL and TypeScript. Pedestals are
+  //      EXHIBIT_SPACING apart, hence the 4.2 steps. Between them and pose 13
+  //      these cover the marks drawn from shapes rather than from primitives, so
+  //      they are the ones to look at after any change to how a mark is cut: the
+  //      N has to stay inside its disc, the ribbon has to read as a band and not
+  //      a triangle, the elephant has to keep both of its waists, and the S has
+  //      to stay an S rather than closing up into an 8.
   {
     position: [MUSEUM_CENTER_X - 6.3, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 12],
     rotation: [0, 0, 0],
@@ -169,6 +166,24 @@ const POSES: { position: [number, number, number]; rotation: [number, number, nu
   {
     position: [MUSEUM_CENTER_X - 2.1, ROAD_SURFACE_Y, MUSEUM_CENTER_Z - 12],
     rotation: [0, Math.PI, 0],
+  },
+  // 18-20 — the portfolio monitor on the back wall, from the three distances it
+  //      has to work at: the far end of the hall, mid-room, and pulled right up
+  //      under it. The chase camera looks DOWN — about five degrees of sky above
+  //      the horizon — so the far pose is the one that decides how much of the
+  //      machine is ever in frame without dragging the view, and the near pose is
+  //      the one that decides whether the housing's depth reads as depth.
+  {
+    position: [MUSEUM_CENTER_X + 12, ROAD_SURFACE_Y, MUSEUM_CENTER_Z],
+    rotation: [0, -Math.PI / 2, 0],
+  },
+  {
+    position: [MUSEUM_CENTER_X - 2, ROAD_SURFACE_Y, MUSEUM_CENTER_Z],
+    rotation: [0, -Math.PI / 2, 0],
+  },
+  {
+    position: [MUSEUM_CENTER_X - 10, ROAD_SURFACE_Y, MUSEUM_CENTER_Z + 3],
+    rotation: [0, -Math.PI / 2.4, 0],
   },
 ];
 
@@ -208,7 +223,6 @@ export default function Probe() {
         />
 
         <Car
-          color="#ef4444"
           position={pose.position}
           rotation={pose.rotation}
           controllable

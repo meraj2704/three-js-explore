@@ -3,12 +3,12 @@
 /**
  * The stack, as things you can drive past.
  *
- * Seven marks standing on the pedestals down the project walls — MongoDB,
- * Express, React, Node, Next, Nest and PostgreSQL — in place of the abstract
- * solids the museum ships with. The first four were the MERN set this file
- * started as; the last three are the rest of what the portrait's tag list claims,
- * which is the only reason a hall of six pedestals a side now has seven marks to
- * deal from.
+ * Eight marks standing on the pedestals down the project walls — MongoDB,
+ * Express, React, Node, Next, Nest, PostgreSQL and TypeScript — in place of the
+ * abstract solids the museum ships with. The first four were the MERN set this
+ * file started as; the next three are the rest of what the portrait's tag list
+ * claims, and the last is the language all of it is written in, which is the only
+ * reason a hall of six pedestals a side now has eight marks to deal from.
  *
  * They are EXTRUDED SILHOUETTES rather than modelled objects, which is the one
  * decision here worth explaining. A logo is a flat drawing; the honest way to
@@ -159,6 +159,28 @@ function circle(radius: number, cx = 0, cy = 0): Shape {
   const disc = new Shape();
   disc.absarc(cx, cy, radius, 0, Math.PI * 2, false);
   return disc;
+}
+
+/** A curved stroke: a ring segment, walked out along the outer edge and back
+ *  along the inner one. The straight `stroke` above cannot bend, and an 'S' is
+ *  nothing but two bends — so the letterform below needs this the way the 'e'
+ *  in Express needed its bowl, which is the same construction inlined. */
+function arcStroke(
+  cx: number,
+  cy: number,
+  radius: number,
+  weight: number,
+  start: number,
+  end: number,
+  clockwise = false,
+): Shape {
+  const band = new Shape();
+  band.absarc(cx, cy, radius + weight / 2, start, end, clockwise);
+  // Back along the inner edge, the other way round. Retracing it in the SAME
+  // direction would fold the band onto itself and triangulate to nothing.
+  band.absarc(cx, cy, radius - weight / 2, end, start, !clockwise);
+  band.closePath();
+  return band;
 }
 
 /** A triangle with its corners taken off, drawn point-DOWN.
@@ -545,6 +567,66 @@ const [POSTGRES_HEAD, POSTGRES_EYES] = markParts([
 ]);
 
 /* ------------------------------------------------------------------ *
+ * TypeScript — the tile
+ * ------------------------------------------------------------------ */
+
+/** The second wordmark in the set, and it takes the same shape as Express for
+ *  the same reason: TypeScript's logo is two letters in a rounded square, and
+ *  there is nothing pictorial to reduce it to. Which is convenient — the two
+ *  wordmarks now read as one family of mark rather than as one odd one out.
+ *
+ *  The letters are set slightly low and slightly right of centre, which is where
+ *  the real mark puts them. It looks like a mistake in a wireframe and correct
+ *  the moment it is filled in: optically, two heavy letterforms in a square want
+ *  the extra air above rather than below.
+ *
+ *  The 'S' is the only curved letterform in this file. It is two ring segments
+ *  from circles stacked one radius apart, each sweeping about three quarters of
+ *  the way round — the top one open at its lower right, the bottom one open at
+ *  its upper left, meeting where the two circles touch. Any less sweep and it
+ *  reads as a 'Z' with round corners; any more and the two ends curl back and
+ *  close it into an '8'. */
+const TS_TILE = 0.9;
+const TS_WEIGHT = 0.058;
+const TS_T_X = -0.185;
+const TS_S_X = 0.195;
+const TS_S_R = 0.098;
+const TS_LETTER_Y = -0.045;
+
+const [TS_PLATE, TS_TYPE] = markParts([
+  { shapes: [roundedRect(TS_TILE, TS_TILE, 0.15)], depth: 0.22 },
+  {
+    depth: 0.3,
+    shapes: [
+      // T: a full-height stem under a bar across the top.
+      stroke(TS_T_X, TS_LETTER_Y, Math.PI / 2, 0.44, TS_WEIGHT),
+      stroke(TS_T_X, TS_LETTER_Y + 0.19, 0, 0.3, TS_WEIGHT),
+      // S, upper bowl: from just right of the top, over and down the left, to
+      // the point where the two circles meet.
+      arcStroke(
+        TS_S_X,
+        TS_LETTER_Y + TS_S_R,
+        TS_S_R,
+        TS_WEIGHT,
+        -0.35,
+        Math.PI * 1.5,
+      ),
+      // And the lower bowl, mirrored: out of that same meeting point, round the
+      // right and along the bottom.
+      arcStroke(
+        TS_S_X,
+        TS_LETTER_Y - TS_S_R,
+        TS_S_R,
+        TS_WEIGHT,
+        Math.PI / 2,
+        -Math.PI * 0.89,
+        true,
+      ),
+    ],
+  },
+]);
+
+/* ------------------------------------------------------------------ *
  * The set
  * ------------------------------------------------------------------ */
 
@@ -592,6 +674,10 @@ const STACK: Exhibit[] = [
     { geometry: null, color: "#336791", emissive: "#0c1a25", ...PAINT },
     { geometry: null, color: "#eef4f8", emissive: "#2c3a44", ...PAINT },
   ],
+  [
+    { geometry: null, color: "#3178c6", emissive: "#0c1e32", ...PAINT },
+    { geometry: null, color: "#f4f8fc", emissive: "#2e3a45", ...PAINT },
+  ],
 ];
 
 /** The geometries, in the same order as the skins above. Kept as a parallel list
@@ -604,6 +690,7 @@ const STACK_GEOMETRY: BufferGeometry[][] = [
   [NEXT_DISC, NEXT_LETTER],
   [NEST_RIBBON, NEST_CROSSING],
   [POSTGRES_HEAD, POSTGRES_EYES],
+  [TS_PLATE, TS_TYPE],
 ];
 
 const MARKS: Exhibit[] = STACK.map((parts, m) =>
@@ -619,15 +706,23 @@ const MARKS: Exhibit[] = STACK.map((parts, m) =>
 /**
  * The stack, dealt along a plinth.
  *
- * `side` shifts the starting mark, so the two walls run out of step: the −z
- * plinth opens on MongoDB and the +z plinth opens on Node. Without the shift both
- * walls deal the identical hand, and a hall that repeats itself across its own
- * centreline looks like a mistake even when every object in it is right.
+ * `side` shifts the starting mark by half the set, so the two walls run out of
+ * step: the −z plinth opens on MongoDB and the +z plinth opens on Next. Without
+ * the shift both walls deal the identical hand, and a hall that repeats itself
+ * across its own centreline looks like a mistake even when every object in it is
+ * right.
  *
- * Seven marks over six pedestals means each wall is one short of the full set —
- * the −z wall never reaches PostgreSQL, the +z wall never reaches React — and
- * that is the better half of the bargain: there is something on the other side of
- * the hall that isn't on this one, which is a reason to drive back down it.
+ * Half the set and not a fixed three, because the set has grown once already and
+ * will again — deriving the offset is what keeps the two walls maximally apart
+ * whatever is added next.
+ *
+ * Eight marks over six pedestals means each wall is two short of the full set:
+ * the −z wall never reaches Nest or PostgreSQL, the +z wall never reaches React
+ * or Node. That shortfall is the better half of the bargain — there is something
+ * on the other side of the hall that isn't on this one, which is a reason to
+ * drive back down it.
  */
 export const stackExhibits = (i: number, side: 1 | -1): Exhibit =>
-  MARKS[(i + (side > 0 ? 3 : 0)) % MARKS.length];
+  MARKS[
+    (i + (side > 0 ? Math.floor(MARKS.length / 2) : 0)) % MARKS.length
+  ];

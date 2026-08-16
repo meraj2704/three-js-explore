@@ -1,11 +1,21 @@
 "use client";
 
-import { Text, useTexture } from "@react-three/drei";
+import { MeshReflectorMaterial, Text, useTexture } from "@react-three/drei";
 import { useFrame } from "@react-three/fiber";
 import { Suspense, useMemo, useRef } from "react";
 import type { ReactNode, RefObject } from "react";
 import { SRGBColorSpace } from "three";
 import type { Group, Mesh, MeshBasicMaterial, MeshStandardMaterial } from "three";
+
+import { CAR_ROOF_Y } from "./carShell";
+import { HoloMotes, HoloPanel, HoloWall } from "./museumHolo";
+import { MuseumMonitor } from "./museumMonitor";
+import type {
+  MonitorAchievement,
+  MonitorProject,
+  MonitorSkill,
+  MonitorStat,
+} from "./museumMonitor";
 
 import {
   PORTRAIT_HALF_DEPTH,
@@ -87,15 +97,48 @@ export const defaultMuseumGeometry: MuseumGeometry = {
 /* ------------------------------------------------------------------ *
  * Theme — every colour the museum wears, so one building can be reskinned
  * into another without touching a single dimension.
- * ------------------------------------------------------------------ */
+ * ------------------------------------------------------------------ *
+ * The palette is doing more work here than a skin usually does, because the
+ * room it describes is MOSTLY DARK. In a lit room, materials are what you see
+ * and light is what reveals them; in this one it is the other way round — the
+ * charcoal below is very nearly the black of the page behind it, so the only
+ * thing separating a wall from the void is the LED line running along it. That
+ * inverts the usual rule about restraint: the greys have to stay almost black
+ * (lift them and the room reads as a grey box, not a dark one), and the accents
+ * have to stay very few (electric blue, cyan, a little purple — a fourth hue
+ * turns a laboratory into an arcade).
+ */
 export type MuseumTheme = {
   base: string;
+  /** The glossy hall floor. Its own token rather than sharing `base`: the slab
+   *  and its top face are the same object structurally, but one is unlit
+   *  substrate and the other is the most reflective surface in the building. */
+  floor: string;
   forecourt: string;
   wall: string;
   facade: string;
+  /** The architectural panels articulating the walls — read against `wall` by a
+   *  hair, never by a shade. The panelling is meant to be found, not announced. */
+  panel: string;
   cornice: string;
   column: string;
   plinth: string;
+  /** Brushed aluminium: the trim, the pedestal shafts, the entrance fins. The
+   *  one genuinely light material in the building, and it works precisely
+   *  because there is so little of it. */
+  metal: string;
+  /** Smoked glass. Dark, slightly blue, and always transparent where it's used. */
+  glass: string;
+  /** The primary neon — every LED strip, floor line and rim in the building
+   *  unless something has a reason to differ. */
+  accent: string;
+  /** The secondary, used sparingly. "Small amounts of purple" is the brief and
+   *  the token exists to keep it small: one name, so it is obvious at a glance
+   *  how many places spend it. */
+  accentAlt: string;
+  /** The back wall's display: the light it emits, and the dark it emits against. */
+  holo: string;
+  holoScreen: string;
   sign: string;
   signOutline: string;
   exhibitLeftColor: string;
@@ -122,33 +165,64 @@ export type MuseumTheme = {
 };
 
 export const defaultMuseumTheme: MuseumTheme = {
-  base: "#575263",
-  forecourt: "#46434c",
-  wall: "#ddd5c6",
-  facade: "#e7e0d2",
-  cornice: "#b3a692",
-  column: "#f2ece1",
-  plinth: "#4a4550",
-  sign: "#fbbf24",
-  signOutline: "#451a03",
-  exhibitLeftColor: "#fca5a5",
-  exhibitLeftEmissive: "#ef4444",
-  exhibitRightColor: "#7dd3fc",
-  exhibitRightEmissive: "#0ea5e9",
-  artworkFrame: "#1c1917",
-  artworkPanel: "#312e81",
-  artworkPanelEmissive: "#4338ca",
-  strip: "#fff7ed",
-  stripEmissive: "#ffedd5",
-  light: "#ffe9c9",
-  /* Cold hardware against warm sandstone. The contrast is the point: in a stone
-   * room lit by one warm lamp, the one thing glowing cyan reads as the one thing
-   * that is switched ON — which is the entire difference between a display and a
-   * memorial. */
-  deck: "#20262f",
-  deckCap: "#2c3440",
-  panelShell: "#161b23",
-  panelScreen: "#0d1219",
+  /* Structure. Every one of these is within a few points of black, and the
+   * spread between them is tiny on purpose — `wall` to `facade` is barely two
+   * shades. In a room this dark that gap is still plainly visible, and anything
+   * wider starts separating the building into its parts instead of reading as
+   * one machined object. */
+  base: "#05070a",
+  /* Much lighter than it looks in the room, and it has to be — this value is
+   * multiplied INTO the floor's reflection rather than sitting under it, so a
+   * black floor reflects nothing at all. See the reflector's own note. */
+  floor: "#2e3742",
+  forecourt: "#0a0d13",
+  wall: "#12151b",
+  panel: "#0d1015",
+  facade: "#171b22",
+  cornice: "#1d222a",
+  column: "#232932",
+  plinth: "#0c0f14",
+  metal: "#7d8895",
+  glass: "#0b1119",
+
+  /* Light. Three hues and no more: electric blue for the architecture, cyan for
+   * anything that is a DISPLAY, purple for the few things that are neither. */
+  accent: "#22d3ee",
+  accentAlt: "#8b5cf6",
+  holo: "#38bdf8",
+  holoScreen: "#04070d",
+  sign: "#67e8f9",
+  signOutline: "#022c39",
+  strip: "#d8f6ff",
+  stripEmissive: "#22d3ee",
+
+  /* The hall's one real lamp. Cool and dim — see LIGHT_INTENSITY. A warm lamp
+   * here would fight every emissive surface in the room, and losing that fight
+   * is what makes a sci-fi interior look like a stage set with a work light on. */
+  light: "#a8d8ff",
+
+  /* Exhibit fallbacks, for a hall stocked with the abstract solids rather than
+   * with logos. Cyan one side, purple the other, so the two plinths read as a
+   * pair without being identical. */
+  exhibitLeftColor: "#a5f3fc",
+  exhibitLeftEmissive: "#0e7490",
+  exhibitRightColor: "#ddd6fe",
+  exhibitRightEmissive: "#6d28d9",
+
+  /* The gallery frames on the side walls. Barely-there bezels around lit boards
+   * — a heavy frame is a museum, and this room is a showroom. */
+  artworkFrame: "#0a0d12",
+  artworkPanel: "#060a12",
+  artworkPanelEmissive: "#0e7490",
+
+  /* The centrepiece display's hardware. This was always the cold, switched-on
+   * thing in a warm stone room; now the room has caught up with it, which is why
+   * these barely moved — they were the design the rest of the building is being
+   * rebuilt toward. */
+  deck: "#12171e",
+  deckCap: "#1b222b",
+  panelShell: "#0e1319",
+  panelScreen: "#05090f",
   panelAccent: "#22d3ee",
   panelText: "#e8f7ff",
   panelMuted: "#8aa6bb",
@@ -264,6 +338,41 @@ export type MuseumPortrait = {
   /** Width : height of the source file, so a picture that is not square is
    *  matted to fit instead of being stretched to the frame. */
   aspect?: number;
+
+  /* ---------------------------------------------------------------- *
+   * The portfolio, as shown on the back wall's monitor.
+   * ---------------------------------------------------------------- *
+   * All optional, and every one of them simply doesn't render when missing — a
+   * museum can put a face and a name on the wall and nothing else. They live
+   * here rather than in a second prop because they are all facts about the SAME
+   * PERSON: splitting "whose museum is this" across two objects is how the name
+   * on the wall and the name on the display end up disagreeing.
+   */
+  about?: string;
+  /** Next to the green indicator. */
+  availability?: string;
+  stats?: MonitorStat[];
+  /** The stack as it appears on the monitor. Falls back to `tags` — those are
+   *  the same list in a different voice, and one museum should not have to
+   *  spell it twice. */
+  tech?: string[];
+  skills?: MonitorSkill[];
+  achievements?: MonitorAchievement[];
+  focus?: { text: string; progress: number };
+  /** The faint corner readouts. Defaults inside the monitor. */
+  telemetry?: string[];
+
+  /* Everything below is only ever seen after a visitor has walked up to the
+   * monitor and OPENED one of its panels. Same object rather than a second one
+   * for the same reason as the rest: it is all facts about one person, and
+   * splitting a person across two props is how the name on the wall and the
+   * name on the display end up disagreeing. */
+  philosophy?: string;
+  timeline?: { year: string; label: string }[];
+  techGroups?: { label: string; items: string[] }[];
+  milestones?: { year: string; label: string }[];
+  learning?: string[];
+  projects?: MonitorProject[];
 };
 
 /** The deck. Low on purpose — a shrine puts the face above you, a desk puts it
@@ -408,25 +517,97 @@ const WALL_SINK = 0.1;
  *  roadside kerb runs up the forecourt and has to stop before it. Aliased rather
  *  than spelled out twice, so there is still only one of it. */
 const WING_PROJECTION = MUSEUM_WING_PROJECTION;
-const COLUMN_SPACING = 2.3;
+const FIN_SPACING = 2.3;
 const EAVES = 0.6;
 const EXHIBIT_SPACING = 4.2;
 const PEDESTAL_HEIGHT = 1.1;
 
-/** Column height : diameter, and base radius : top radius. Slenderness rather
- *  than a fixed radius, so a taller portico gets thicker columns instead of
- *  fourteen pencils — 14:1 is about where a stone column still reads as one. */
-const COLUMN_SLENDERNESS = 14;
-const COLUMN_TAPER = 1.125;
+/** The entrance fins — what used to be engaged classical columns, and the change
+ *  that decides whether the building reads as a museum or as a showroom before
+ *  you are through the door.
+ *
+ *  A column is a load-bearing cylinder that tapers because stone does. None of
+ *  that is true of a fin: it is a flat blade standing off the wall with a light
+ *  in its front edge, it carries nothing, and it is deliberately too thin to
+ *  look like it could. Same rhythm, same positions, opposite argument. */
+const FIN_WIDTH = 0.34;
+const FIN_PROJECTION = 0.5;
+/** How much shorter than the wall it stands against — a fin that reached the
+ *  cornice would read as a pilaster, which is the thing being avoided. */
+const FIN_HEAD_ROOM = 1.6;
+
+/** The wall panelling: how wide one bay is, how far a panel stands proud of the
+ *  wall behind it, and the reveal left around it. The relief is TINY — under two
+ *  centimetres — and that is the entire trick. The brief asks for panels that
+ *  are subtle, and at this depth, in a room lit by grazing LED light, a panel is
+ *  a change of shading rather than a visible step. Deepen it and the walls start
+ *  reading as shipping crates. */
+const PANEL_BAY = 3.6;
+const PANEL_RELIEF = 0.018;
+const PANEL_REVEAL = 0.22;
+
+/** The vertical LED seam between bays, and how much shorter it is than the panel
+ *  it divides. Thin — this is the "thin glowing LED strips built into the walls"
+ *  of the brief, and a strip you could measure by eye is a tube light. */
+const SEAM_WIDTH = 0.035;
+const SEAM_INSET = 1.1;
+
+/** The ceiling light coves: how far below the ceiling they hang, the radius of
+ *  the tube, and how far in from the side walls the outer pair runs.
+ *
+ *  Capsules, not boxes. A capsule is a cylinder with hemispherical ends, so one
+ *  primitive gives a continuous strip that CURVES at both ends and needs no cap
+ *  geometry, no mitre and no seam — which is exactly the light fitting the brief
+ *  describes, and the cheapest possible way to draw it. */
+const COVE_DROP = 0.42;
+const COVE_RADIUS = 0.11;
+const COVE_INSET = 5.5;
+
+/** The transverse arches: half-torus ribs of light spanning the hall, and how
+ *  many of them are spread down its length.
+ *
+ *  These are what stop the ceiling being three parallel lines. They also do the
+ *  job the brief hints at without naming — "sharp modern edges mixed with a few
+ *  smooth curved elements" — and they are the few. Three, because at four the
+ *  ceiling starts to read as a tunnel, and a tunnel is a corridor, not a room. */
+const ARCH_COUNT = 3;
+const ARCH_RADIUS = 0.075;
+
+/** The runway lines let into the floor. Two long lines flanking the drive lane
+ *  and a pair of tramlines further out, plus how far apart the transverse ticks
+ *  between them fall.
+ *
+ *  Laid ON the floor rather than cut into it — a hair proud, like every other
+ *  emissive surface in this building. A real inset would mean cutting the floor
+ *  plane into strips, and the floor plane is the one surface here that has to
+ *  stay whole, because it is the one carrying the reflection. */
+const RUNWAY_WEIGHT = 0.05;
+const RUNWAY_LIFT = 0.006;
+const RUNWAY_HALF_Z = 4.2;
+const TRAMLINE_FRACTION = 0.82;
+const TICK_SPACING = 3.4;
+const TICK_LENGTH = 0.55;
+
+/** The floor's gloss. Only spent while someone is in the room — see the note on
+ *  the floor mesh itself, which is where the real explanation lives. */
+const FLOOR_REFLECT_RESOLUTION = 512;
+const FLOOR_REFLECT_BLUR: [number, number] = [420, 110];
 
 /** What the hall lamp is aimed at: roughly this much light reaching the darkest
  *  point in the room, the far bottom corner. The lamp has decay 2 — inverse
  *  square — so its intensity is this times the SQUARE of that corner's distance,
  *  and a hall that grows by half needs more than twice the lamp. Deriving it
  *  from the corner is what keeps that arithmetic from being done by hand and
- *  forgotten; the pair below reproduce the 310/34 the default hall was tuned to
- *  by eye, which is where both numbers come from. */
-const HALL_CORNER_LUX = 0.96;
+ *  forgotten.
+ *
+ *  Cut to a THIRD of what the stone hall was tuned to, and that is the single
+ *  most important number in this redesign. "Mostly dark" is not a colour, it is
+ *  an exposure: a charcoal room under a lamp bright enough to read by is a grey
+ *  room, and no amount of neon on top of it will read as neon. Everything that
+ *  looks bright in here is emissive, which means it does not brighten the room —
+ *  so the room can afford to be genuinely dark, and the LEDs are the only things
+ *  in it with any luminance at all. That is what makes them glow. */
+const HALL_CORNER_LUX = 0.32;
 
 /** How far past that corner the lamp's `distance` cutoff is pushed. Falloff is
  *  already near-nothing out there, but stopping AT the corner clips it to black
@@ -458,14 +639,16 @@ function deriveLayout(g: MuseumGeometry) {
   const WING_WIDTH = HALF_WIDTH - WING_INNER_Z;
   const WING_X = HALF_DEPTH + WING_PROJECTION / 2;
 
-  // Columns spaced by a constant, count follows the wing width — a wider wing
-  // gets more, not the same pair marooned in the middle.
-  const COLUMN_COUNT = Math.max(2, Math.round(WING_WIDTH / COLUMN_SPACING));
-  const COLUMN_OFFSETS = Array.from(
-    { length: COLUMN_COUNT },
-    (_, i) => (i - (COLUMN_COUNT - 1) / 2) * (WING_WIDTH / COLUMN_COUNT),
+  // Fins spaced by a constant, count follows the wing width — a wider wing gets
+  // more, not the same pair marooned in the middle.
+  const FIN_COUNT = Math.max(2, Math.round(WING_WIDTH / FIN_SPACING));
+  const FIN_OFFSETS = Array.from(
+    { length: FIN_COUNT },
+    (_, i) => (i - (FIN_COUNT - 1) / 2) * (WING_WIDTH / FIN_COUNT),
   );
-  const COLUMN_RADIUS = g.height / (2 * COLUMN_SLENDERNESS);
+  const FIN_HEIGHT = g.height - FIN_HEAD_ROOM;
+  const FIN_Y = FIN_HEIGHT / 2;
+  const FIN_X = HALF_DEPTH + WING_PROJECTION + FIN_PROJECTION / 2;
 
   const ROOF_EDGE_X = HALF_DEPTH + EAVES;
 
@@ -481,12 +664,117 @@ function deriveLayout(g: MuseumGeometry) {
   const PLINTH_Z = g.hallHalfZ + g.plinthDepth / 2;
   const PEDESTAL_TOP = g.plinthHeight + PEDESTAL_HEIGHT;
 
-  // Back-wall art and light strips as fractions of the room, so they keep
-  // their proportions if the hall height moves.
-  const ARTWORK_Y = g.height * 0.49;
-  const ARTWORK_HEIGHT = g.height * 0.56;
-  const ARTWORK_HALF_Z = g.hallHalfZ * 0.66;
-  const STRIP_Y = g.height * 0.43;
+  // The inner faces of the walls: where anything mounted INSIDE the hall lives.
+  const INNER_Z = HALF_WIDTH - g.wall;
+
+  /* The back wall's display. "Huge" and "seamless" are the brief, so it is sized
+   * to the wall rather than to itself: the full inner width less a hand's-width
+   * of reveal at each side, and from just above the floor to just below the
+   * ceiling coves. What is left of the wall around it is a margin, not a frame. */
+  const HOLO_WIDTH = INNER_Z * 2 - 1.6;
+  const HOLO_BOTTOM = 0.7;
+  const HOLO_TOP = g.height - 1.9;
+  const HOLO_HEIGHT = HOLO_TOP - HOLO_BOTTOM;
+  const HOLO_Y = (HOLO_TOP + HOLO_BOTTOM) / 2;
+
+  /* The portfolio monitor, hung on that wall. Three constraints decide it and
+   * not one of them is a taste.
+   *
+   * The BOTTOM EDGE is a clearance, and it is derived rather than typed. This is
+   * the only thing in the hall that stands PROUD of a wall you can drive at:
+   * isOnPavement stops the car's centre at the wall less its half-width, which
+   * still leaves the nose of a 4-long car through the plane of the wall by well
+   * over half a metre. Nothing catches it only because the machine's underside
+   * is held above the car's roof — so the roof is what the number is measured
+   * from, and a taller car raises the monitor instead of driving through it.
+   *
+   * The WIDTH is the wall's, less a reveal. The machine is meant to BE the back
+   * wall rather than to hang on it, so it takes the whole panel — and the strip
+   * of wall left showing all the way round is doing a job, not saving space: the
+   * wall behind is ruled at a fixed world pitch, the display is ruled at the
+   * same one, and the reveal is what lets you see the two lines meet. Close the
+   * gap and the ruling has nowhere to be read; open it and the monitor is hung
+   * on the wall again instead of let into it.
+   *
+   * The HEIGHT is what the reveal and the car clearance leave. It cannot be
+   * symmetric top and bottom, because the bottom edge is a collision contract
+   * and the top edge is only a margin — so the machine sits a little high in its
+   * wall, which is where a display you stand under belongs anyway.
+   *
+   * One consequence worth knowing rather than discovering. The chase camera
+   * looks DOWN — it sits 2.5 above the car aiming at its roof, leaving about
+   * five degrees of sky above the horizon — so from the door you see to roughly
+   * 4.8 up this wall and from mid-hall to under 4. A full-wall machine is
+   * therefore never entirely in the default frame: the identity block sits in
+   * it, the floor's mirror carries the rest, and the top is the part you drag
+   * the view down to see. That is the trade this size is making, and it is the
+   * right one for a wall you drive up to — but it is a trade. */
+  const MONITOR_REVEAL = 0.8;
+  const MONITOR_BOTTOM = CAR_ROOF_Y + 0.45;
+  const MONITOR_TOP = HOLO_TOP - MONITOR_REVEAL;
+  const MONITOR_WIDTH = HOLO_WIDTH - MONITOR_REVEAL * 2;
+  const MONITOR_HEIGHT = MONITOR_TOP - MONITOR_BOTTOM;
+  const MONITOR_Y = MONITOR_BOTTOM + MONITOR_HEIGHT / 2;
+
+  /* The side walls' horizontal LED line. Lower than the old gallery strip, at
+   * about eye height from a car — it is the line the room is read along, and a
+   * line above the pictures lights them where a line beside them leads you down
+   * the hall. */
+  const STRIP_Y = g.height * 0.38;
+
+  /* Wall panelling. Bays are sized by dividing the run into a whole number of
+   * them rather than by stepping a fixed width along it, so the panelling always
+   * closes on the corners — a part bay at one end is the one thing that would
+   * make a machined wall look tiled. */
+  const PANEL_BAYS = Math.max(3, Math.round((INNER_X * 2) / PANEL_BAY));
+  const PANEL_STEP = (INNER_X * 2) / PANEL_BAYS;
+  const PANEL_X = Array.from(
+    { length: PANEL_BAYS },
+    (_, i) => (i - (PANEL_BAYS - 1) / 2) * PANEL_STEP,
+  );
+  /* The seams fall BETWEEN bays, which is one fewer than the bays themselves —
+   * a seam at each end would land in the corner, where two of them meet and read
+   * as a mistake rather than as a joint. */
+  const SEAM_X = Array.from(
+    { length: PANEL_BAYS - 1 },
+    (_, i) => (i - (PANEL_BAYS - 2) / 2) * PANEL_STEP,
+  );
+  const PANEL_HEIGHT_WALL = g.height - SEAM_INSET * 2;
+  const PANEL_WALL_Y = g.height / 2;
+
+  /* Ceiling. A real one, hung under the roof slab — the old building had none,
+   * because the chase camera never looks up. It does now, indirectly: the floor
+   * below is a mirror, so the ceiling is on screen the whole time you are in
+   * here, upside down and at the bottom of the frame. That is also why the coves
+   * are worth the geometry. */
+  const CEILING_Y = g.height;
+  const COVE_Y = CEILING_Y - COVE_DROP;
+  const COVE_LENGTH = INNER_X * 2 - 2.4;
+  const COVE_Z = [-1, 0, 1].map((k) => k * (INNER_Z - COVE_INSET));
+
+  const ARCH_X = Array.from(
+    { length: ARCH_COUNT },
+    (_, i) => (i - (ARCH_COUNT - 1) / 2) * ((INNER_X * 2 - 6) / ARCH_COUNT),
+  );
+  /* The arch springs from the tops of the side walls and passes just under the
+   * ceiling, so its radius is the hall's half-width — a half-torus of exactly
+   * that radius touches both walls at floor level of the ceiling plane, which is
+   * where a rib belongs. Dropped by its own tube radius so it lies against the
+   * ceiling rather than through it. */
+  const ARCH_RADIUS_SPAN = INNER_Z;
+  const ARCH_Y = CEILING_Y - ARCH_RADIUS - 0.02;
+
+  /* Runway. The two inner lines flank the lane the car actually drives; the
+   * tramlines sit most of the way out toward the plinths, which is what gives
+   * the floor its length. Everything stops short of the back wall so the lines
+   * appear to run UNDER the display rather than into it. */
+  const RUNWAY_LENGTH = INNER_X * 2 - 1.2;
+  const TRAMLINE_Z = g.hallHalfZ * TRAMLINE_FRACTION;
+  const TICK_COUNT = Math.max(2, Math.round(RUNWAY_LENGTH / TICK_SPACING));
+  const TICK_X = Array.from(
+    { length: TICK_COUNT },
+    (_, i) => (i - (TICK_COUNT - 1) / 2) * (RUNWAY_LENGTH / TICK_COUNT),
+  );
 
   // The picture rail: the band of side wall between the tops of the exhibits and
   // the light strip above them. Derived from both rather than fixed, so a taller
@@ -543,16 +831,37 @@ function deriveLayout(g: MuseumGeometry) {
     WING_Z,
     WING_WIDTH,
     WING_X,
-    COLUMN_OFFSETS,
-    COLUMN_RADIUS,
+    FIN_OFFSETS,
+    FIN_HEIGHT,
+    FIN_Y,
+    FIN_X,
     ROOF_EDGE_X,
     EXHIBIT_X,
     PLINTH_Z,
     PEDESTAL_TOP,
-    ARTWORK_Y,
-    ARTWORK_HEIGHT,
-    ARTWORK_HALF_Z,
+    INNER_Z,
+    HOLO_WIDTH,
+    HOLO_HEIGHT,
+    HOLO_Y,
+    MONITOR_WIDTH,
+    MONITOR_HEIGHT,
+    MONITOR_Y,
     STRIP_Y,
+    PANEL_X,
+    PANEL_STEP,
+    SEAM_X,
+    PANEL_HEIGHT_WALL,
+    PANEL_WALL_Y,
+    CEILING_Y,
+    COVE_Y,
+    COVE_LENGTH,
+    COVE_Z,
+    ARCH_X,
+    ARCH_RADIUS_SPAN,
+    ARCH_Y,
+    RUNWAY_LENGTH,
+    TRAMLINE_Z,
+    TICK_X,
     GALLERY_FRAME_HEIGHT,
     GALLERY_Y,
     GALLERY_WALL_Z,
@@ -739,348 +1048,7 @@ function FittedPicture({
  * what lets one offset serve a museum looking either way; the collision hole in
  * isOnPavement is the only place the two signs have to be spelled out.
  */
-function PortraitExhibit({
-  portrait,
-  theme: t,
-  lit,
-}: {
-  portrait: MuseumPortrait;
-  theme: MuseumTheme;
-  lit: boolean;
-}) {
-  const scanBar = useRef<Mesh>(null);
-  const scanMaterial = useRef<MeshBasicMaterial>(null);
-  const bezelMaterial = useRef<MeshStandardMaterial>(null);
-  const apertureMaterial = useRef<MeshStandardMaterial>(null);
-  const liveMaterial = useRef<MeshStandardMaterial>(null);
 
-  // Chips dealt into as many rows as the band has room for, rather than at a
-  // fixed pitch, so a long stack packs tighter instead of running off the bottom
-  // of the board — the same bargain the exhibit cases and the wall frames make
-  // with their own runs. Two columns past a short list, because the back of a
-  // landscape card is wide and shallow and a single file wastes both halves.
-  const chips = useMemo(() => {
-    const tags = portrait.tags ?? [];
-    if (tags.length === 0) return [];
-
-    const columns = tags.length > CHIP_COLUMN_LIMIT ? 2 : 1;
-    const rows = Math.ceil(tags.length / columns);
-    const step = Math.min(CHIP_MAX_STEP, STACK_BAND / rows);
-
-    return tags.map((label, i) => ({
-      label,
-      // Filled across then down, so the reading order is the order they're given.
-      // The first column is at NEGATIVE z, because this board is read from
-      // BEHIND the head — where the panel's +z is on the viewer's right, not
-      // their left. Get the sign wrong and the list is legible but back to front.
-      z: columns === 1 ? 0 : (i % 2 === 0 ? -1 : 1) * STACK_COLUMN_Z,
-      y: STACK_TOP - (Math.floor(i / columns) + 0.5) * step,
-      width: label.length * CHIP_FONT * GLYPH_ADVANCE + CHIP_PADDING * 2,
-      height: Math.min(CHIP_MAX_HEIGHT, step - 0.1),
-    }));
-  }, [portrait.tags]);
-
-  // A sweep, two breaths out of phase, and a blink. Four property writes a
-  // frame, no new geometry and — the part that matters in this renderer — NO NEW
-  // LIGHT: everything that appears to glow here is emissive, for the same reason
-  // the hall is down to a single pointLight.
-  //
-  // All of it belongs to the SCREEN, and that is a deliberate correction. The
-  // first build put a rotating orbit ring around the whole exhibit for the same
-  // reason — an exhibit with nothing moving in it reads as something being
-  // preserved — but a hairline ring seen from a car is a diagonal line drifting
-  // across the face, which reads as a broken renderer, not as an orbit. Motion
-  // that lives on a surface that is supposed to be emitting light cannot be
-  // mistaken for a glitch, and that turns out to be the whole trick.
-  //
-  // None of it is gated on `lit`, because it costs the same either way and the
-  // dim values it multiplies are what keep the exhibit dark in an empty hall.
-  useFrame(({ clock }) => {
-    const time = clock.elapsedTime;
-    const pass = (time % SCAN_PERIOD) / SCAN_PERIOD;
-
-    if (scanBar.current) {
-      scanBar.current.position.y = SCAN_TOP - pass * (SCAN_TOP - SCAN_BOTTOM);
-    }
-    // Faded in and out across the pass. Without this the bar teleports back to
-    // the top of the picture at full brightness once every SCAN_PERIOD, which
-    // reads as a glitch rather than as a refresh.
-    if (scanMaterial.current) {
-      scanMaterial.current.opacity =
-        (lit ? SCAN_PEAK : SCAN_PEAK * 0.35) * Math.sin(Math.PI * pass);
-    }
-    if (bezelMaterial.current) {
-      bezelMaterial.current.emissiveIntensity =
-        (lit ? 1.2 : 0.32) * (0.88 + 0.12 * Math.sin(time * 1.6));
-    }
-    // Off the bezel's beat on purpose. Two things breathing in step read as one
-    // thing flashing; out of step they read as a machine with more than one part
-    // to it, which is the impression the whole exhibit is after.
-    if (apertureMaterial.current) {
-      apertureMaterial.current.emissiveIntensity =
-        (lit ? 0.75 : 0.2) * (0.78 + 0.22 * Math.sin(time * 0.9 + 1.1));
-    }
-    if (liveMaterial.current) {
-      liveMaterial.current.emissiveIntensity =
-        (lit ? 2.6 : 0.7) * (0.5 + 0.5 * Math.sin(time * 2.6));
-    }
-  });
-
-  return (
-    <group position={[PORTRAIT_OFFSET_X, 0, 0]}>
-      {/* Deck, and a cap that oversails it. The cap is the widest thing here and
-          PORTRAIT_HALF_DEPTH / PORTRAIT_HALF_Z are drawn to it — a box cut to
-          the head instead would let the car's nose in under a lip it can plainly
-          see. This is the one part of the exhibit that is not free to move. */}
-      <mesh position={[0, DECK_HEIGHT / 2, 0]} castShadow receiveShadow>
-        <boxGeometry args={[DECK_BODY_DEPTH, DECK_HEIGHT, DECK_BODY_WIDTH]} />
-        <meshStandardMaterial color={t.deck} metalness={0.35} roughness={0.5} />
-      </mesh>
-      <mesh position={[0, DECK_HEIGHT - DECK_CAP_THICKNESS / 2, 0]} castShadow>
-        <boxGeometry args={[DECK_CAP_DEPTH, DECK_CAP_THICKNESS, DECK_CAP_WIDTH]} />
-        <meshStandardMaterial color={t.deckCap} metalness={0.3} roughness={0.45} />
-      </mesh>
-
-      {/* The lit plate in the deck's top face. Laid ON the cap rather than let
-          into it — a hair proud, like every other surface in this exhibit, which
-          is cheaper than a hole and doesn't z-fight. */}
-      <mesh position={[0, DECK_HEIGHT + 0.005, 0]} rotation={[-Math.PI / 2, 0, 0]}>
-        <planeGeometry args={[DECK_APERTURE_DEPTH, DECK_APERTURE_WIDTH]} />
-        <meshStandardMaterial
-          ref={apertureMaterial}
-          color={t.panelScreen}
-          emissive={t.panelAccent}
-          emissiveIntensity={lit ? 0.75 : 0.2}
-          roughness={0.4}
-        />
-      </mesh>
-
-      {/* The arm. Length and lean both derived, so the head can be re-tilted or
-          re-lifted without this having to be re-aimed by hand. Tapered hard, and
-          wide at the foot: a uniform pole over this short a rise reads as a stick
-          the display has been skewered on rather than as something holding it. */}
-      <mesh position={[ARM_X, ARM_Y, 0]} rotation={[0, 0, ARM_TILT]} castShadow>
-        <cylinderGeometry args={[0.085, 0.185, ARM_LENGTH, 14]} />
-        <meshStandardMaterial color={t.deckCap} metalness={0.55} roughness={0.35} />
-      </mesh>
-
-      {/* The head, tilted back on the arm. Everything inside is measured from the
-          middle of the display, so the tilt lives here and nowhere else. */}
-      <group position={[0, PANEL_Y, 0]} rotation={[0, 0, PANEL_TILT]}>
-        {/* Shell */}
-        <mesh castShadow receiveShadow>
-          <boxGeometry args={[PANEL_THICKNESS, PANEL_HEIGHT, PANEL_WIDTH]} />
-          <meshStandardMaterial
-            color={t.panelShell}
-            metalness={0.45}
-            roughness={0.42}
-          />
-        </mesh>
-
-        {/* Bezel glow, then the screen board on top of it — the strip of bezel
-            left showing around the board IS the rim light. One plane instead of
-            four edge bars, and it breathes, which is most of what sells the
-            display as powered rather than as a picture of one. */}
-        <mesh position={[layerX(1), 0, 0]} rotation={FACE_FRONT}>
-          <planeGeometry
-            args={[
-              (SCREEN_HALF_WIDTH + PANEL_BEZEL) * 2,
-              (SCREEN_HALF_HEIGHT + PANEL_BEZEL) * 2,
-            ]}
-          />
-          <meshStandardMaterial
-            ref={bezelMaterial}
-            color={t.panelAccent}
-            emissive={t.panelAccent}
-            emissiveIntensity={lit ? 1.2 : 0.32}
-            roughness={0.4}
-          />
-        </mesh>
-        {/* Barely emissive, and that is the point: at anything like the rim's
-            brightness the whole board floods teal, the picture stops being the
-            brightest thing on the display and the readout loses its contrast.
-            The screen is meant to be the dark the rim is bright against. */}
-        <mesh position={[layerX(2), 0, 0]} rotation={FACE_FRONT}>
-          <planeGeometry args={[SCREEN_HALF_WIDTH * 2, SCREEN_HALF_HEIGHT * 2]} />
-          <meshStandardMaterial
-            color={t.panelScreen}
-            emissive={t.panelAccent}
-            emissiveIntensity={lit ? 0.045 : 0.015}
-            roughness={0.6}
-          />
-        </mesh>
-
-        <Suspense fallback={null}>
-          <FittedPicture
-            src={portrait.src}
-            aspect={portrait.aspect}
-            fitWidth={PICTURE_SIZE}
-            fitHeight={PICTURE_SIZE}
-            lit={lit}
-            position={[layerX(3), PICTURE_Y, PICTURE_Z]}
-            rotation={FACE_FRONT}
-          />
-        </Suspense>
-
-        {/* The scan bar, riding down the screen. A basic material, so the one
-            thing moving every frame is also the one thing the renderer does least
-            work for — and a TINT rather than added light, which is the less
-            obvious of the two choices. Additive is what a glowing bar physically
-            is, but additive over a brightly lit face saturates instantly to white
-            while the same bar over the dark half of the screen is invisible; one
-            effect that looks like two. A flat alpha tint crosses both halves
-            looking like the same object, which is what actually reads. */}
-        <mesh ref={scanBar} position={[layerX(4), SCAN_TOP, 0]} rotation={FACE_FRONT}>
-          <planeGeometry args={[SCREEN_HALF_WIDTH * 2, SCAN_THICKNESS]} />
-          <meshBasicMaterial
-            ref={scanMaterial}
-            color={t.panelAccent}
-            transparent
-            opacity={0}
-            depthWrite={false}
-          />
-        </mesh>
-
-        {/* Rule under the name, spanning the readout column. */}
-        <mesh
-          position={[layerX(5), RULE_Y, (READOUT_START_Z + READOUT_END_Z) / 2]}
-          rotation={FACE_FRONT}
-        >
-          <planeGeometry args={[READOUT_WIDTH, 0.016]} />
-          <meshStandardMaterial
-            color={t.panelAccent}
-            emissive={t.panelAccent}
-            emissiveIntensity={lit ? 1 : 0.3}
-          />
-        </mesh>
-
-        {/* The live indicator, blinking at the head of the status line. A
-            geometric dot rather than a character in the text, so it needs no text
-            metrics to place and can pulse on its own. */}
-        <mesh
-          position={[layerX(5), STATUS_Y, LIVE_DOT_Z]}
-          rotation={FACE_FRONT}
-        >
-          <circleGeometry args={[LIVE_DOT_RADIUS, 16]} />
-          <meshStandardMaterial
-            ref={liveMaterial}
-            color={t.panelLive}
-            emissive={t.panelLive}
-            emissiveIntensity={lit ? 2.6 : 0.7}
-          />
-        </mesh>
-
-        {/* Name, role, status, ranged left down the column beside the face. The
-            role is the line doing the real work here: a name alone under a
-            portrait is an epitaph, and a name with a job is a person who has one.
-            Left-aligned rather than centred because a ragged-right block reads as
-            a record about someone, and a centred one reads as an inscription.
-
-            anchorX="left" and the text runs off into -z, which is why every row
-            starts at the column's +z edge. maxWidth wraps a longer role onto a
-            second line rather than letting it run under the picture. */}
-        {portrait.caption && (
-          <Text
-            position={[layerX(6), NAME_Y, READOUT_START_Z]}
-            rotation={FACE_FRONT}
-            fontSize={NAME_SIZE}
-            letterSpacing={0.06}
-            maxWidth={READOUT_WIDTH}
-            textAlign="left"
-            anchorX="left"
-            anchorY="middle"
-            color={t.panelText}
-          >
-            {portrait.caption}
-          </Text>
-        )}
-        {portrait.role && (
-          <Text
-            position={[layerX(6), ROLE_Y, READOUT_START_Z]}
-            rotation={FACE_FRONT}
-            fontSize={ROLE_SIZE}
-            letterSpacing={0.11}
-            lineHeight={1.35}
-            maxWidth={READOUT_WIDTH}
-            textAlign="left"
-            anchorX="left"
-            anchorY="middle"
-            color={t.panelAccent}
-          >
-            {portrait.role.toUpperCase()}
-          </Text>
-        )}
-        {portrait.status && (
-          <Text
-            position={[layerX(6), STATUS_Y, READOUT_START_Z - STATUS_INDENT]}
-            rotation={FACE_FRONT}
-            fontSize={STATUS_SIZE}
-            letterSpacing={0.06}
-            maxWidth={READOUT_WIDTH - STATUS_INDENT}
-            textAlign="left"
-            anchorX="left"
-            anchorY="middle"
-            color={t.panelMuted}
-          >
-            {portrait.status}
-          </Text>
-        )}
-
-        {/* The back. This is where the name used to be repeated in big outlined
-            letters on a slab, which is a headstone however you light it. It is
-            the stack instead — the thing you would actually want to read once
-            you have driven around to look. */}
-        <mesh position={[backLayerX(1), 0, 0]} rotation={FACE_BACK}>
-          <planeGeometry args={[SCREEN_HALF_WIDTH * 2, SCREEN_HALF_HEIGHT * 2]} />
-          <meshStandardMaterial
-            color={t.panelScreen}
-            emissive={t.panelAccent}
-            emissiveIntensity={lit ? 0.035 : 0.012}
-            roughness={0.7}
-          />
-        </mesh>
-        {chips.length > 0 && (
-          <Text
-            position={[backLayerX(3), STACK_HEADER_Y, 0]}
-            rotation={FACE_BACK}
-            fontSize={0.17}
-            letterSpacing={0.34}
-            anchorX="center"
-            anchorY="middle"
-            color={t.panelMuted}
-          >
-            STACK
-          </Text>
-        )}
-        {chips.map((chip) => (
-          <group key={chip.label} position={[0, chip.y, chip.z]}>
-            <mesh position={[backLayerX(2), 0, 0]} rotation={FACE_BACK}>
-              <planeGeometry args={[chip.width, chip.height]} />
-              <meshStandardMaterial
-                color={t.panelShell}
-                emissive={t.panelAccent}
-                emissiveIntensity={lit ? 0.16 : 0.05}
-                roughness={0.5}
-              />
-            </mesh>
-            <Text
-              position={[backLayerX(3), 0, 0]}
-              rotation={FACE_BACK}
-              fontSize={CHIP_FONT}
-              letterSpacing={0.08}
-              anchorX="center"
-              anchorY="middle"
-              color={t.panelText}
-            >
-              {chip.label}
-            </Text>
-          </group>
-        ))}
-      </group>
-
-    </group>
-  );
-}
 
 /**
  * One picture hung on a side wall.
@@ -1123,10 +1091,37 @@ function GalleryFrame({
           proud of that — the stagger is the only thing keeping three coplanar
           surfaces out of a depth fight. No castShadow: the one light that could
           cast here is the hall's pointLight, and that has shadows off for the
-          cube-map reason given below. */}
+          cube-map reason given below.
+
+          The frame is now a bezel: near-black, slightly metallic, and read only
+          by the rim of light around it. Mounting a print in a heavy frame is what
+          a gallery does; a showroom mounts it in a housing, and the difference is
+          entirely in how much of the frame you are meant to notice. */}
       <mesh>
         <boxGeometry args={[width, height, GALLERY_FRAME_DEPTH]} />
-        <meshStandardMaterial color={t.artworkFrame} roughness={0.85} />
+        <meshStandardMaterial
+          color={t.artworkFrame}
+          roughness={0.5}
+          metalness={0.55}
+        />
+      </mesh>
+
+      {/* The rim: the bezel's own face, left showing as a border around the board
+          laid over it. One plane instead of four edge bars — the same trick the
+          portrait display's bezel uses, and the same reason. */}
+      <mesh position={[0, 0, faceZ + 0.005]}>
+        <planeGeometry
+          args={[
+            width - GALLERY_REVEAL * 2 + 0.06,
+            height - GALLERY_REVEAL * 2 + 0.06,
+          ]}
+        />
+        <meshStandardMaterial
+          color={t.accent}
+          emissive={t.accent}
+          emissiveIntensity={lit ? 1.1 : 0.24}
+          roughness={0.4}
+        />
       </mesh>
 
       <mesh position={[0, 0, faceZ + 0.01]}>
@@ -1134,10 +1129,10 @@ function GalleryFrame({
           args={[width - GALLERY_REVEAL * 2, height - GALLERY_REVEAL * 2]}
         />
         <meshStandardMaterial
-          color={t.facade}
-          emissive={t.stripEmissive}
-          emissiveIntensity={lit ? 0.3 : 0.09}
-          roughness={0.9}
+          color={t.artworkPanel}
+          emissive={t.artworkPanelEmissive}
+          emissiveIntensity={lit ? 0.35 : 0.1}
+          roughness={0.6}
         />
       </mesh>
 
@@ -1155,16 +1150,20 @@ function GalleryFrame({
         </Suspense>
       )}
 
+      {/* The caption, now in the accent rather than in the sign's dark outline
+          colour. That swap is not a preference: the board behind it went from
+          near-white to near-black, and dark type on a dark board is not a subtle
+          caption, it is an invisible one. */}
       {item.caption && (
         <Text
           position={[0, captionY, faceZ + 0.03]}
           fontSize={0.19}
-          letterSpacing={0.08}
+          letterSpacing={0.22}
           maxWidth={width - GALLERY_REVEAL * 2 - 0.2}
           textAlign="center"
           anchorX="center"
           anchorY="middle"
-          color={t.signOutline}
+          color={t.accent}
         >
           {item.caption}
         </Text>
@@ -1309,13 +1308,152 @@ export function Museum({
       position={[g.centerX, g.roadSurfaceY, g.centerZ]}
       rotation={[0, facing > 0 ? 0 : Math.PI, 0]}
     >
-      {/* Floor and base in one slab: top face is the polished hall floor, the
-          sides are the plinth the building stands on. Barely any metalness —
-          with no environment map to reflect, more turns the floor black. */}
+      {/* The slab the building stands on. Its top face used to BE the hall floor;
+          now it is only the substrate under one, and it is drawn dead matte on
+          purpose — everything it does is hidden by the glossy plane laid over it,
+          except at the edges, where a matte skirt is what stops the building
+          looking like it is floating on its own reflection. */}
       <mesh position={[0, -BASE_THICKNESS / 2, 0]} receiveShadow>
         <boxGeometry args={[l.HALF_DEPTH * 2, BASE_THICKNESS, l.HALF_WIDTH * 2]} />
-        <meshStandardMaterial color={t.base} metalness={0.08} roughness={0.38} />
+        <meshStandardMaterial color={t.base} metalness={0.1} roughness={0.75} />
       </mesh>
+
+      {/* The hall floor, and the one genuinely expensive thing in this building.
+          "Strong but controlled floor reflections" is the whole look, and there
+          is no cheap way to fake a mirror finish under a car that moves — an
+          env-mapped floor reflects a cube map of somewhere else, which is fine
+          for a wall and instantly wrong for the ground beneath a vehicle.
+
+          So it is a real planar reflection: drei renders the scene a SECOND time
+          each frame, from a camera mirrored through this plane, and samples the
+          result. That is a whole extra pass over every object in the world.
+
+          Which is why it is spent only while someone is standing in the room.
+          When the hall is empty the same plane takes an ordinary glossy material
+          — still dark, still shiny, just not reflecting anything — and the pass
+          disappears along with the reason for it. Two museums in this scene and
+          the occupancy flag is exclusive, so at most one reflector is ever live.
+
+          Resolution and blur are held down for the same reason: a 512 buffer
+          blurred this hard cannot resolve detail, but a showroom floor is not
+          meant to be a mirror — it is meant to smear the lights into long
+          verticals, and blur is what does that. */}
+      <mesh
+        position={[0, 0.004, 0]}
+        rotation={[-Math.PI / 2, 0, 0]}
+        receiveShadow
+      >
+        <planeGeometry args={[l.INNER_X * 2, l.INNER_Z * 2]} />
+        {lit ? (
+          <MeshReflectorMaterial
+            resolution={FLOOR_REFLECT_RESOLUTION}
+            blur={FLOOR_REFLECT_BLUR}
+            mixBlur={1}
+            /* These four are the whole reflection, and three of them are
+               counter-intuitive enough to be worth writing down — the first
+               build got all three wrong and produced a floor of pure black.
+
+               The material's shader ends in
+
+                 diffuse = diffuse * ((1 - mirror) + reflection * mixStrength)
+
+               so the reflection is MULTIPLIED BY THE FLOOR'S OWN ALBEDO rather
+               than added over it. Three consequences, none of them obvious:
+
+               `color` cannot be the near-black the rest of this room is painted
+               in. At #08 the multiplier is about 0.003 and the reflection is
+               annihilated — the floor has to be a mid slate for anything to
+               survive the multiply, and the DARKNESS then comes from what it is
+               reflecting (an almost unlit room) rather than from its own paint.
+
+               `metalness` has to be LOW, which is the opposite of what a glossy
+               floor wants everywhere else. Albedo is scaled by (1 - metalness)
+               in every PBR shader, so a metalness of 0.7 throws away 70% of the
+               reflection before it is ever drawn.
+
+               And `mirror` is not "how reflective" — it is the size of the
+               NON-reflective term. High mirror means the parts of the floor with
+               nothing above them go dark, which is exactly the controlled half of
+               "strong but controlled": bright streaks under the lit objects,
+               black everywhere else. */
+            color={t.floor}
+            metalness={0.08}
+            roughness={0.34}
+            mirror={0.82}
+            mixStrength={13}
+            mixContrast={1.05}
+            depthScale={1.05}
+            minDepthThreshold={0.35}
+            maxDepthThreshold={1.4}
+          />
+        ) : (
+          /* The empty-hall stand-in. Metallic where the reflector is not, on
+             purpose: with no reflection to carry, the gloss has to come from the
+             specular highlight instead, and that is what metalness buys. */
+          <meshStandardMaterial
+            color={t.floor}
+            metalness={0.65}
+            roughness={0.3}
+          />
+        )}
+      </mesh>
+
+      {/* The runway. Two lines flanking the lane you drive, two tramlines further
+          out, and ticks between them — which is the arrangement that makes a
+          large dark floor read as having a LENGTH. Without the ticks the two
+          long lines are just lines; with them the floor has a rate, and the rate
+          is what you feel when you drive up it.
+
+          Laid a few millimetres proud of the floor rather than inset into it: the
+          reflector needs one unbroken plane, and cutting channels for these would
+          mean cutting up the only surface in the room that must stay whole. */}
+      {([-1, 1] as const).map((side) => (
+        <group key={`runway${side}`}>
+          <mesh
+            position={[0, RUNWAY_LIFT, side * RUNWAY_HALF_Z]}
+            rotation={[-Math.PI / 2, 0, 0]}
+          >
+            <planeGeometry args={[l.RUNWAY_LENGTH, RUNWAY_WEIGHT]} />
+            <meshStandardMaterial
+              color={t.accent}
+              emissive={t.accent}
+              emissiveIntensity={lit ? 1.9 : 0.6}
+              roughness={0.35}
+            />
+          </mesh>
+          <mesh
+            position={[0, RUNWAY_LIFT, side * l.TRAMLINE_Z]}
+            rotation={[-Math.PI / 2, 0, 0]}
+          >
+            <planeGeometry args={[l.RUNWAY_LENGTH, RUNWAY_WEIGHT * 0.7]} />
+            <meshStandardMaterial
+              color={t.accent}
+              emissive={t.accent}
+              emissiveIntensity={lit ? 1.1 : 0.28}
+              roughness={0.35}
+            />
+          </mesh>
+          {l.TICK_X.map((x) => (
+            <mesh
+              key={x}
+              position={[
+                x,
+                RUNWAY_LIFT,
+                (side * (RUNWAY_HALF_Z + l.TRAMLINE_Z)) / 2,
+              ]}
+              rotation={[-Math.PI / 2, 0, 0]}
+            >
+              <planeGeometry args={[RUNWAY_WEIGHT * 0.8, TICK_LENGTH]} />
+              <meshStandardMaterial
+                color={t.accentAlt}
+                emissive={t.accentAlt}
+                emissiveIntensity={lit ? 1.4 : 0.35}
+                roughness={0.35}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
 
       {/* Forecourt at road height, so the car drives straight in with no ramp. */}
       <mesh
@@ -1323,13 +1461,44 @@ export function Museum({
         receiveShadow
       >
         <boxGeometry args={[g.forecourtDepth, 0.2, g.forecourtHalfZ * 2]} />
-        <meshStandardMaterial color={t.forecourt} roughness={0.85} />
+        <meshStandardMaterial
+          color={t.forecourt}
+          metalness={0.35}
+          roughness={0.55}
+        />
       </mesh>
 
-      {/* Back wall */}
+      {/* And the runway continued out across it, aimed at the doors. The lines
+          outside are the only invitation the building makes — a black box at the
+          end of a dark branch is otherwise indistinguishable from the end of the
+          road. They run on the forecourt's own emissive budget, not the hall's,
+          so they stay lit whether or not anyone is inside. */}
+      {([-1, 1] as const).map((side) => (
+        <mesh
+          key={`approach${side}`}
+          position={[
+            l.HALF_DEPTH + g.forecourtDepth / 2,
+            0.006,
+            side * (g.doorHalfWidth - 0.4),
+          ]}
+          rotation={[-Math.PI / 2, 0, 0]}
+        >
+          <planeGeometry args={[g.forecourtDepth, RUNWAY_WEIGHT]} />
+          <meshStandardMaterial
+            color={t.accent}
+            emissive={t.accent}
+            emissiveIntensity={1.5}
+            roughness={0.35}
+          />
+        </mesh>
+      ))}
+
+      {/* Back wall. Matte, and that word is load-bearing: at roughness 0.9 it
+          returns almost nothing to the camera, which is what lets the display
+          mounted on it a moment later be the only thing there. */}
       <mesh position={[-l.FACADE_X, l.WALL_Y, 0]} castShadow receiveShadow>
         <boxGeometry args={[g.wall, l.WALL_HEIGHT, l.HALF_WIDTH * 2]} />
-        <meshStandardMaterial color={t.wall} roughness={0.75} />
+        <meshStandardMaterial color={t.wall} roughness={0.9} metalness={0.15} />
       </mesh>
 
       {/* Side walls */}
@@ -1341,7 +1510,119 @@ export function Museum({
           receiveShadow
         >
           <boxGeometry args={[l.HALF_DEPTH * 2, l.WALL_HEIGHT, g.wall]} />
-          <meshStandardMaterial color={t.wall} roughness={0.75} />
+          <meshStandardMaterial color={t.wall} roughness={0.9} metalness={0.15} />
+        </mesh>
+      ))}
+
+      {/* The panelling, and the LED seams between the bays.
+
+          This is the "subtle architectural panels" of the brief, and subtlety
+          here is a measurement rather than a taste: PANEL_RELIEF is under two
+          centimetres, so no panel is ever seen as a step. What is seen is that
+          the wall changes shade at regular intervals — one shade darker in the
+          middle of each bay, a thread of light at each joint — and a wall that
+          does that is a made thing, where a flat one is a backdrop.
+
+          Slightly more metallic than the wall behind them, which is the other
+          half of it. The panels catch the LED line running past at a grazing
+          angle and the wall does not, so the articulation shows up as reflected
+          light rather than as drawn geometry. */}
+      {([-1, 1] as const).map((side) => (
+        <group
+          key={`panels${side}`}
+          position={[0, 0, side * (l.INNER_Z - PANEL_RELIEF / 2)]}
+          // The half turn on the +z wall aims the seams' faces back into the
+          // room — the same double duty it does on the gallery frames below.
+          // Without it the +z wall's light strips face the stone behind them.
+          rotation={[0, side > 0 ? Math.PI : 0, 0]}
+        >
+          {l.PANEL_X.map((x) => (
+            <mesh key={x} position={[x, l.PANEL_WALL_Y, 0]} receiveShadow>
+              <boxGeometry
+                args={[
+                  l.PANEL_STEP - PANEL_REVEAL,
+                  l.PANEL_HEIGHT_WALL,
+                  PANEL_RELIEF,
+                ]}
+              />
+              <meshStandardMaterial
+                color={t.panel}
+                roughness={0.55}
+                metalness={0.45}
+              />
+            </mesh>
+          ))}
+
+          {l.SEAM_X.map((x) => (
+            <mesh key={x} position={[x, l.PANEL_WALL_Y, PANEL_RELIEF]}>
+              <planeGeometry
+                args={[SEAM_WIDTH, l.PANEL_HEIGHT_WALL - SEAM_INSET]}
+              />
+              <meshStandardMaterial
+                color={t.strip}
+                emissive={t.stripEmissive}
+                emissiveIntensity={lit ? 1.6 : 0.28}
+                roughness={0.4}
+              />
+            </mesh>
+          ))}
+        </group>
+      ))}
+
+      {/* The ceiling, and the light coves under it.
+
+          The old building had no ceiling at all — the chase camera never looks
+          up, so the roof slab was enough. It is not enough any more, because the
+          floor is now a mirror: everything hung up here is on screen for the
+          whole visit, inverted, in the bottom half of the frame. The coves are
+          drawn for their reflection first and for themselves second.
+
+          Capsules, so each strip is continuously curved at both ends with no cap,
+          no mitre and no seam — one primitive doing what the brief calls
+          "continuous curved LED light strips", and doing it in one draw call. */}
+      <mesh position={[0, l.CEILING_Y + 0.15, 0]} receiveShadow>
+        <boxGeometry args={[l.INNER_X * 2, 0.3, l.INNER_Z * 2]} />
+        <meshStandardMaterial color={t.panel} roughness={0.85} metalness={0.2} />
+      </mesh>
+
+      {l.COVE_Z.map((z, i) => (
+        <mesh
+          key={z}
+          position={[0, l.COVE_Y, z]}
+          rotation={[0, 0, Math.PI / 2]}
+        >
+          <capsuleGeometry args={[COVE_RADIUS, l.COVE_LENGTH, 4, 12]} />
+          <meshStandardMaterial
+            color={t.strip}
+            emissive={t.stripEmissive}
+            // The centre run brighter than its neighbours. Three identical strips
+            // read as a grid of fittings; one strong line flanked by two weaker
+            // ones reads as indirect lighting with a source, which is the effect
+            // the brief asks for and the more expensive-looking of the two.
+            emissiveIntensity={(i === 1 ? 2.6 : 1.5) * (lit ? 1 : 0.16)}
+            roughness={0.35}
+          />
+        </mesh>
+      ))}
+
+      {/* Transverse ribs of light. These are the curves the brief allows against
+          all those sharp edges — and being half-tori they are also the one place
+          in the building where a straight line is nowhere to be found. */}
+      {l.ARCH_X.map((x) => (
+        <mesh
+          key={x}
+          position={[x, l.ARCH_Y, 0]}
+          rotation={[0, Math.PI / 2, 0]}
+        >
+          <torusGeometry
+            args={[l.ARCH_RADIUS_SPAN, ARCH_RADIUS, 6, 40, Math.PI]}
+          />
+          <meshStandardMaterial
+            color={t.strip}
+            emissive={t.accentAlt}
+            emissiveIntensity={lit ? 1.1 : 0.18}
+            roughness={0.4}
+          />
         </mesh>
       ))}
 
@@ -1354,7 +1635,11 @@ export function Museum({
           receiveShadow
         >
           <boxGeometry args={[g.wall, l.WALL_HEIGHT, l.PIER_WIDTH]} />
-          <meshStandardMaterial color={t.facade} roughness={0.7} />
+          <meshStandardMaterial
+            color={t.facade}
+            roughness={0.65}
+            metalness={0.35}
+          />
         </mesh>
       ))}
       <mesh
@@ -1364,10 +1649,54 @@ export function Museum({
         <boxGeometry
           args={[g.wall, g.height - g.doorHeight, g.doorHalfWidth * 2]}
         />
-        <meshStandardMaterial color={t.facade} roughness={0.7} />
+        <meshStandardMaterial
+          color={t.facade}
+          roughness={0.65}
+          metalness={0.35}
+        />
       </mesh>
 
-      {/* Entrance wings, standing on their own stone down to the base. */}
+      {/* The portal: a glowing rail up each jamb and one across the head of the
+          opening. Three thin bars, and they are the single most valuable piece of
+          light on the building — a matte black box at the end of an unlit branch
+          has no readable opening at all until something outlines it, and a driver
+          who cannot see the door drives into the wall beside it.
+
+          Set a whisker outside the facade's front face so they read as fitted
+          INTO the reveal rather than painted on it. */}
+      {([-1, 1] as const).map((side) => (
+        <mesh
+          key={`jamb${side}`}
+          position={[
+            l.HALF_DEPTH + 0.02,
+            g.doorHeight / 2,
+            side * (g.doorHalfWidth + 0.09),
+          ]}
+          rotation={[0, Math.PI / 2, 0]}
+        >
+          <planeGeometry args={[0.09, g.doorHeight]} />
+          <meshStandardMaterial
+            color={t.strip}
+            emissive={t.stripEmissive}
+            emissiveIntensity={2.2}
+            roughness={0.35}
+          />
+        </mesh>
+      ))}
+      <mesh
+        position={[l.HALF_DEPTH + 0.02, g.doorHeight + 0.045, 0]}
+        rotation={[0, Math.PI / 2, 0]}
+      >
+        <planeGeometry args={[g.doorHalfWidth * 2 + 0.27, 0.09]} />
+        <meshStandardMaterial
+          color={t.strip}
+          emissive={t.stripEmissive}
+          emissiveIntensity={2.2}
+          roughness={0.35}
+        />
+      </mesh>
+
+      {/* Entrance wings, standing on their own footing down to the base. */}
       {[-1, 1].map((side) => (
         <group key={`wing${side}`} position={[0, 0, side * l.WING_Z]}>
           <mesh
@@ -1378,7 +1707,11 @@ export function Museum({
             <boxGeometry
               args={[WING_PROJECTION, g.height + BASE_THICKNESS, l.WING_WIDTH]}
             />
-            <meshStandardMaterial color={t.facade} roughness={0.7} />
+            <meshStandardMaterial
+              color={t.facade}
+              roughness={0.65}
+              metalness={0.35}
+            />
           </mesh>
 
           {/* Cornice — starts where the main roof's overhang stops, so the two
@@ -1398,27 +1731,52 @@ export function Museum({
                 l.WING_WIDTH + 0.6,
               ]}
             />
-            <meshStandardMaterial color={t.cornice} roughness={0.75} />
+            <meshStandardMaterial
+              color={t.cornice}
+              roughness={0.6}
+              metalness={0.4}
+            />
           </mesh>
 
-          {/* Engaged columns, half-sunk into the wing's front face — cheaper
-              than free-standing and they can't end up in the car's way. */}
-          {l.COLUMN_OFFSETS.map((offset) => (
-            <mesh
-              key={offset}
-              position={[l.HALF_DEPTH + WING_PROJECTION, g.height / 2, offset]}
-              castShadow
-            >
-              <cylinderGeometry
-                args={[
-                  l.COLUMN_RADIUS,
-                  l.COLUMN_RADIUS * COLUMN_TAPER,
-                  g.height,
-                  14,
-                ]}
-              />
-              <meshStandardMaterial color={t.column} roughness={0.65} />
-            </mesh>
+          {/* Entrance fins, standing off the wing's front face.
+
+              These were engaged classical columns, and swapping them is what
+              settles the building's argument at the door. A column is a tapered
+              cylinder that reads as carrying the roof; a fin is a blade of
+              brushed aluminium, too thin to be carrying anything, with a line of
+              light down its leading edge. Same rhythm, same count, same spacing —
+              the whole change is the section and the material, and it is enough
+              to move the building nineteen hundred years.
+
+              They stop short of the cornice. A fin that reached it would be a
+              pilaster again, and the strip of dark wall left above is what makes
+              them read as applied to the facade rather than part of it. */}
+          {l.FIN_OFFSETS.map((offset) => (
+            <group key={offset} position={[0, 0, offset]}>
+              <mesh position={[l.FIN_X, l.FIN_Y, 0]} castShadow>
+                <boxGeometry
+                  args={[FIN_PROJECTION, l.FIN_HEIGHT, FIN_WIDTH]}
+                />
+                <meshStandardMaterial
+                  color={t.metal}
+                  roughness={0.42}
+                  metalness={0.85}
+                />
+              </mesh>
+              {/* The light in its leading edge. */}
+              <mesh
+                position={[l.FIN_X + FIN_PROJECTION / 2 + 0.004, l.FIN_Y, 0]}
+                rotation={[0, Math.PI / 2, 0]}
+              >
+                <planeGeometry args={[FIN_WIDTH * 0.34, l.FIN_HEIGHT - 0.5]} />
+                <meshStandardMaterial
+                  color={t.strip}
+                  emissive={t.stripEmissive}
+                  emissiveIntensity={1.7}
+                  roughness={0.35}
+                />
+              </mesh>
+            </group>
           ))}
         </group>
       ))}
@@ -1426,24 +1784,48 @@ export function Museum({
       {/* Roof slab, oversized so it reads as an overhang. */}
       <mesh position={[0, g.height + 0.25, 0]} castShadow>
         <boxGeometry args={[l.ROOF_EDGE_X * 2, 0.7, (l.HALF_WIDTH + EAVES) * 2]} />
-        <meshStandardMaterial color={t.cornice} roughness={0.75} />
+        <meshStandardMaterial
+          color={t.cornice}
+          roughness={0.6}
+          metalness={0.4}
+        />
+      </mesh>
+
+      {/* A line of light under the eaves, all the way along the front. It is what
+          gives the roof an edge in the dark — without it the slab and the night
+          sky behind it are the same colour, and the building has no top. */}
+      <mesh
+        position={[l.ROOF_EDGE_X - 0.05, g.height - 0.12, 0]}
+        rotation={[0, Math.PI / 2, 0]}
+      >
+        <planeGeometry args={[(l.HALF_WIDTH + EAVES) * 2 - 0.6, 0.06]} />
+        <meshStandardMaterial
+          color={t.strip}
+          emissive={t.stripEmissive}
+          emissiveIntensity={1.4}
+          roughness={0.4}
+        />
       </mesh>
 
       {/* Sign across the lintel. Sized to the flat facade BETWEEN the wings, and
           set just above the door — the chase camera looks slightly downward, so
-          anything high on the facade leaves frame before the car arrives. */}
+          anything high on the facade leaves frame before the car arrives.
+
+          The heavy outline is gone. An outlined face is how you keep dark type
+          legible on a bright stone wall; on a black wall the type is the bright
+          thing, and an outline around it only muddies the glow. */}
       <Text
-        position={[l.HALF_DEPTH + 0.06, g.doorHeight + 1, 0]}
+        position={[l.HALF_DEPTH + 0.06, g.doorHeight + 1.15, 0]}
         rotation={[0, Math.PI / 2, 0]}
-        fontSize={0.85}
-        letterSpacing={0.12}
+        fontSize={0.8}
+        letterSpacing={0.34}
         maxWidth={l.WING_INNER_Z * 2 - 1}
         textAlign="center"
-        lineHeight={1.35}
+        lineHeight={1.4}
         anchorX="center"
         anchorY="middle"
         color={t.sign}
-        outlineWidth={0.015}
+        outlineWidth={0.004}
         outlineColor={t.signOutline}
       >
         {name}
@@ -1455,7 +1837,32 @@ export function Museum({
         <group key={`gallery${side}`} position={[0, 0, side * l.PLINTH_Z]}>
           <mesh position={[0, g.plinthHeight / 2, 0]} receiveShadow>
             <boxGeometry args={[l.INNER_X * 2, g.plinthHeight, g.plinthDepth]} />
-            <meshStandardMaterial color={t.plinth} roughness={0.6} />
+            <meshStandardMaterial
+              color={t.plinth}
+              roughness={0.45}
+              metalness={0.5}
+            />
+          </mesh>
+
+          {/* A light let into the plinth's front face, running its whole length.
+              This is the kerb of the runway: it is at roughly the height of a
+              driver's eye, it is the first thing that tells you where the floor
+              stops, and it is the longest continuous line in the building. */}
+          <mesh
+            position={[
+              0,
+              g.plinthHeight * 0.58,
+              -side * (g.plinthDepth / 2 + 0.006),
+            ]}
+            rotation={[0, side > 0 ? Math.PI : 0, 0]}
+          >
+            <planeGeometry args={[l.INNER_X * 2 - 0.8, 0.055]} />
+            <meshStandardMaterial
+              color={t.strip}
+              emissive={t.stripEmissive}
+              emissiveIntensity={lit ? 1.7 : 0.4}
+              roughness={0.35}
+            />
           </mesh>
 
           {l.EXHIBIT_X.map((x, i) => {
@@ -1463,13 +1870,75 @@ export function Museum({
 
             return (
               <group key={x} position={[x, 0, 0]}>
-                {/* Pedestal */}
+                {/* The pedestal, rebuilt as a piece of equipment rather than a
+                    block of stone.
+
+                    A stone pedestal is a cube because a cube is what stone does
+                    cheaply. This one is a slim dark shaft under a brushed
+                    aluminium cap, with a light ring on the deck at its foot and a
+                    line up the face you see it from — narrower than the thing
+                    standing on it, which is the detail that makes a mark look
+                    PRESENTED rather than parked. Minimal, per the brief: four
+                    small pieces, and three of them are barely there. */}
                 <mesh
                   position={[0, g.plinthHeight + PEDESTAL_HEIGHT / 2, 0]}
                   castShadow
                 >
-                  <boxGeometry args={[1, PEDESTAL_HEIGHT, 1]} />
-                  <meshStandardMaterial color={t.facade} roughness={0.7} />
+                  <boxGeometry args={[0.62, PEDESTAL_HEIGHT, 0.62]} />
+                  <meshStandardMaterial
+                    color={t.glass}
+                    roughness={0.34}
+                    metalness={0.62}
+                  />
+                </mesh>
+
+                {/* The cap it stands on. The only brushed aluminium inside the
+                    hall, and there is one per exhibit — which is exactly as much
+                    of a light material as a dark room can carry. */}
+                <mesh
+                  position={[0, g.plinthHeight + PEDESTAL_HEIGHT + 0.03, 0]}
+                  castShadow
+                >
+                  <boxGeometry args={[0.82, 0.06, 0.82]} />
+                  <meshStandardMaterial
+                    color={t.metal}
+                    roughness={0.4}
+                    metalness={0.9}
+                  />
+                </mesh>
+
+                {/* The ring on the deck at its foot: a halo of light on the
+                    plinth, which is what makes the shaft look like it is standing
+                    ON something powered instead of glued to it. */}
+                <mesh
+                  position={[0, g.plinthHeight + 0.005, 0]}
+                  rotation={[-Math.PI / 2, 0, 0]}
+                >
+                  <ringGeometry args={[0.44, 0.5, 28]} />
+                  <meshStandardMaterial
+                    color={t.accent}
+                    emissive={t.accent}
+                    emissiveIntensity={lit ? 1.8 : 0.42}
+                    roughness={0.4}
+                  />
+                </mesh>
+
+                {/* And a line up the face turned toward the lane. */}
+                <mesh
+                  position={[
+                    0,
+                    g.plinthHeight + PEDESTAL_HEIGHT / 2,
+                    -side * 0.316,
+                  ]}
+                  rotation={[0, side > 0 ? Math.PI : 0, 0]}
+                >
+                  <planeGeometry args={[0.05, PEDESTAL_HEIGHT - 0.3]} />
+                  <meshStandardMaterial
+                    color={t.strip}
+                    emissive={t.stripEmissive}
+                    emissiveIntensity={lit ? 1.5 : 0.3}
+                    roughness={0.4}
+                  />
                 </mesh>
 
                 {/* Exhibit — emissive, so each carries its own glow instead of
@@ -1503,7 +1972,14 @@ export function Museum({
                             ? t.exhibitRightEmissive
                             : t.exhibitLeftEmissive)
                         }
-                        emissiveIntensity={lit ? 0.9 : 0.45}
+                        /* Raised from the 0.9 the sandstone hall used, and it
+                           had to be: the lamp above is now a third of what it
+                           was, so a mark lit only by the room would go black in
+                           the dark it needs to be standing in. The brief asks
+                           for glowing symbols and this is where that is paid
+                           for — the marks carry their own light now, and the
+                           lamp only picks out their edges. */
+                        emissiveIntensity={lit ? 1.9 : 0.7}
                         metalness={part.metalness ?? 0.5}
                         roughness={part.roughness ?? 0.3}
                       />
@@ -1516,38 +1992,125 @@ export function Museum({
         </group>
       ))}
 
-      {/* Artwork on the back wall, so there is something to drive up to. */}
-      <mesh position={[-l.INNER_X + 0.05, l.ARTWORK_Y, 0]}>
-        <boxGeometry args={[0.08, l.ARTWORK_HEIGHT, l.ARTWORK_HALF_Z * 2]} />
-        <meshStandardMaterial color={t.artworkFrame} roughness={0.9} />
-      </mesh>
-      <mesh position={[-l.INNER_X + 0.12, l.ARTWORK_Y, 0]}>
-        <boxGeometry
-          args={[0.06, l.ARTWORK_HEIGHT - 0.7, l.ARTWORK_HALF_Z * 2 - 0.8]}
-        />
-        <meshStandardMaterial
-          color={t.artworkPanel}
-          emissive={t.artworkPanelEmissive}
-          emissiveIntensity={lit ? 0.55 : 0.25}
-          roughness={0.5}
-        />
-      </mesh>
+      {/* The intelligent wall. What used to be a framed panel in the middle of
+          the back wall is now the back wall — near enough its full inner width
+          and most of its height, with no frame, no mat and no border. It lives in
+          museumHolo.tsx, which is where everything made of light rather than of
+          material lives; all this end has to do is turn it to face down the hall.
 
-      {/* Backlit strips along the side walls, just above the exhibits. Emissive
-          only — they give the pointLight a visible source. On the walls, not
-          the ceiling, because the chase camera never looks up. */}
-      {[-1, 1].map((side) => (
-        <mesh
+          A quarter turn about y aims its +z at the door. Everything inside it is
+          then laid out in an ordinary x-across / y-up frame, which is a good deal
+          easier to reason about than the y/z gymnastics the portrait display
+          does — and the reason it can afford to be simple is that it is flat
+          against a wall, where the portrait has to work from every angle. */}
+      <group
+        position={[-l.INNER_X + 0.06, l.HOLO_Y, 0]}
+        rotation={[0, Math.PI / 2, 0]}
+      >
+        <HoloWall
+          width={l.HOLO_WIDTH}
+          height={l.HOLO_HEIGHT}
+          theme={t}
+          lit={lit}
+          /* A wall with a monitor bolted to the middle of it has to stop being
+             the thing you look at. `quiet` drops its arcs and its watermark —
+             the two composed elements, both of them dead centre and both of them
+             behind eight tonnes of housing — and leaves the grid, the sweeps and
+             the data strip, which is exactly the ambient surface a mounted
+             instrument wants to be seen against. */
+          quiet={portrait !== undefined}
+          label={portrait ? undefined : name}
+          status={
+            portrait
+              ? undefined
+              : lit
+                ? "SYSTEMS NOMINAL · VISITOR PRESENT"
+                : "STANDBY"
+          }
+        />
+
+        {/* The portfolio monitor, on the same wall and in the same frame — so
+            its whole depth is spent standing OUT into the hall without a single
+            sign flip. It is drawn from z = 0 at the wall face outward, which is
+            why the group below only has to say how high up the wall it hangs.
+
+            Mounted only where there is somebody to be about: a museum with no
+            portrait gets the intelligent wall on its own, which is what the
+            second hall down the road is still showing. */}
+        {portrait && (
+          <group position={[0, l.MONITOR_Y - l.HOLO_Y, 0.07]}>
+            <MuseumMonitor
+              width={l.MONITOR_WIDTH}
+              height={l.MONITOR_HEIGHT}
+              theme={t}
+              lit={lit}
+              profile={{
+                name: portrait.caption ?? name,
+                role: portrait.role,
+                portrait: portrait.src,
+                portraitAspect: portrait.aspect,
+                about: portrait.about,
+                availability: portrait.availability,
+                stats: portrait.stats,
+                tech: portrait.tech ?? portrait.tags,
+                skills: portrait.skills,
+                achievements: portrait.achievements,
+                focus: portrait.focus,
+                telemetry: portrait.telemetry,
+                philosophy: portrait.philosophy,
+                timeline: portrait.timeline,
+                techGroups: portrait.techGroups,
+                milestones: portrait.milestones,
+                learning: portrait.learning,
+                projects: portrait.projects,
+              }}
+            />
+          </group>
+        )}
+      </group>
+
+      {/* The side walls' LED line, above the exhibits and running the length of
+          the room. Thinner than the backlit box it replaces by a factor of five:
+          the old one was a lamp with a visible bulb, and this is a line let into
+          a wall. In a room this dark the thin one actually reads as brighter —
+          there is less of it, so what there is has to be hotter, and a hot thin
+          line is what an LED strip looks like.
+
+          Two of them per wall now, close together and unequal. A single line is a
+          light fitting; a pair with a gap is a detail somebody drew. */}
+      {([-1, 1] as const).map((side) => (
+        <group
           key={`strip${side}`}
-          position={[0, l.STRIP_Y, side * (l.HALF_WIDTH - g.wall - 0.06)]}
+          position={[0, 0, side * (l.INNER_Z - 0.05)]}
+          rotation={[0, side > 0 ? Math.PI : 0, 0]}
         >
-          <boxGeometry args={[l.INNER_X * 2 - 1.4, 0.28, 0.12]} />
-          <meshStandardMaterial
-            color={t.strip}
-            emissive={t.stripEmissive}
-            emissiveIntensity={lit ? 2 : 0.15}
-          />
-        </mesh>
+          {/* Held at 2, not higher, and this is the ceiling every LED in the
+              building is tuned against. Emissive output is colour × intensity
+              and then clipped: cyan is (0.13, 0.83, 0.93), so anything past
+              about 1.2 pins green and blue at 1 while red keeps climbing — and
+              a strip driven to 3 is not a brighter cyan, it is a WHITE strip
+              with a cyan halo. Past that point the palette the whole room is
+              built on is being thrown away in exchange for glare. Two is about
+              as hot as a line can run and still be a colour. */}
+          <mesh position={[0, l.STRIP_Y, 0]}>
+            <planeGeometry args={[l.INNER_X * 2 - 1.4, 0.055]} />
+            <meshStandardMaterial
+              color={t.strip}
+              emissive={t.stripEmissive}
+              emissiveIntensity={lit ? 2 : 0.4}
+              roughness={0.35}
+            />
+          </mesh>
+          <mesh position={[0, l.STRIP_Y - 0.16, 0]}>
+            <planeGeometry args={[l.INNER_X * 2 - 1.4, 0.02]} />
+            <meshStandardMaterial
+              color={t.strip}
+              emissive={t.stripEmissive}
+              emissiveIntensity={lit ? 1.4 : 0.2}
+              roughness={0.35}
+            />
+          </mesh>
+        </group>
       ))}
 
       {/* The gallery, hung along both side walls in the band between the
@@ -1571,13 +2134,60 @@ export function Museum({
 
       {/* The centrepiece, if this museum has one. Everything above is the room;
           this is what the room is for. */}
-      {portrait && (
-        <PortraitExhibit portrait={portrait} theme={t} lit={lit} />
+      
+
+      {/* Two interfaces hanging in the air near the back of the room, angled in
+          toward the lane so they are readable on the drive up rather than only
+          from a stop. Held well above the drivable floor and well inside the
+          plinths — they pass through nothing, and nothing passes through them.
+
+          They are also the room's depth cue. A dark hall with everything stuck to
+          its surfaces reads flat however long it is; two objects floating at a
+          known height, at a known distance, are what let the eye measure it. */}
+      {lit &&
+        ([-1, 1] as const).map((side) => (
+          <group
+            key={`hud${side}`}
+            position={[-l.INNER_X * 0.42, g.height * 0.46, side * (g.hallHalfZ - 1.6)]}
+            rotation={[0, Math.PI / 2 + side * 0.42, 0]}
+          >
+            <HoloPanel
+              width={2.4}
+              height={1.7}
+              theme={t}
+              lit={lit}
+              rows={5}
+              phase={side > 0 ? 0 : Math.PI}
+              accent={side > 0 ? t.accentAlt : t.holo}
+            />
+          </group>
+        ))}
+
+      {/* And the air itself. One draw call for the whole field, and mounted only
+          while someone is in the room — an empty hall should be still, and having
+          the air come alive as you cross the threshold is most of what makes the
+          building feel like it noticed you arrive. */}
+      {lit && (
+        <group position={[0, g.height * 0.45, 0]}>
+          <HoloMotes
+            scale={[l.INNER_X * 2 * 0.9, g.height * 0.8, l.INNER_Z * 2 * 0.85]}
+            color={t.accent}
+          />
+        </group>
       )}
 
       {/* The hall's only real light, and only while someone is here — every
           light in a forward renderer is evaluated for every lit fragment. No
-          castShadow: a shadow-casting pointLight renders a six-face cube map. */}
+          castShadow: a shadow-casting pointLight renders a six-face cube map.
+
+          It is a THIRD of the lamp the stone hall had, which looks like a
+          downgrade and is the opposite. Every glowing thing in this room is
+          emissive, and emissive brightness is absolute — it does not scale with
+          the room's exposure. So the dimmer this lamp is, the further ahead of
+          the walls the LEDs sit, and "mostly dark with electric blue lighting" is
+          a description of that GAP rather than of any single colour in it. Turn
+          this back up and the neon does not get brighter; the room around it
+          does, and the whole effect flattens out. */}
       {lit && (
         <pointLight
           position={[0, l.LIGHT_Y, 0]}
